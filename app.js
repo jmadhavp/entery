@@ -26,13 +26,9 @@ const COLLECTIONS = {
 
 const NAV_ITEMS = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'sales', label: 'Sales', icon: '💰' },
-    { id: 'purchases', label: 'Purchase Products', icon: '🛒' },
-        { id: 'customers', label: 'Customers', icon: '👥' },
-    { id: 'suppliers', label: 'Suppliers', icon: '🏪' },
-    { id: 'expenses', label: 'Expenses', icon: '📉' },
-    { id: 'reports', label: 'Reports', icon: '📈' },
-    { id: 'settings', label: 'Settings', icon: '⚙️' }
+    { id: 'products', label: 'Products', icon: '📋' },
+    { id: 'purchases', label: 'Purchase', icon: '🛒' },
+    { id: 'sales', label: 'Sales', icon: '💰' }
 ];
 
 let currentUser = null;
@@ -139,8 +135,9 @@ function renderPage() {
     const content = document.getElementById('content');
     const renderFn = {
         dashboard: renderDashboard,
-        sales: renderSales,
+        products: renderInventory,
         purchases: renderPurchases,
+        sales: renderSales,
         customers: renderCustomers,
         suppliers: renderSuppliers,
         expenses: renderExpenses,
@@ -209,7 +206,7 @@ async function renderSales(container) {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Product List</label>
+                    <label>Product</label>
                     <select id="sale-product">
                         <option value="">Select Product</option>
                         ${inventory.map(i => `<option value="${i.id}">${i.name} (${i.quantity} in stock)</option>`).join('')}
@@ -294,7 +291,7 @@ async function renderPurchases(container) {
     const inventory = await getCollection('inventory');
     container.innerHTML = `
         <div class="card">
-            <h2>Purchase Products</h2>
+            <h2>Add Purchase</h2>
             <form id="purchase-form">
                 <div class="form-group">
                     <label>Supplier</label>
