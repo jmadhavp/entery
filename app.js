@@ -1,6 +1,3 @@
-
-function requirePass(){if(sessionStorage.getItem("edit_ok")) return true; const p=prompt("Enter passcode"); if(p!=="1234"){alert("Wrong passcode"); return false;} sessionStorage.setItem("edit_ok","1"); return true;}
-window.addEventListener("beforeunload",()=>sessionStorage.removeItem("edit_ok"));
 const firebaseConfig = {
     apiKey: "AIzaSyASSH_a0qetl-wT5fvSC6vQk-T3mibPf54",
     authDomain: "entery-d6888.firebaseapp.com",
@@ -31,8 +28,9 @@ const NAV_ITEMS = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'sales', label: 'Sales', icon: '💰' },
     { id: 'purchases', label: 'Purchases', icon: '🛒' },
-    { id: 'products', label: 'Products', icon: '📋' },
-    { id: 'reports', label: 'Reports', icon: '📈' },, label: 'Suppliers', icon: '🏪' },
+    { id: 'inventory', label: 'Inventory', icon: '📦' },
+    { id: 'customers', label: 'Customers', icon: '👥' },
+    { id: 'suppliers', label: 'Suppliers', icon: '🏪' },
     { id: 'expenses', label: 'Expenses', icon: '📉' },
     { id: 'reports', label: 'Reports', icon: '📈' },
     { id: 'settings', label: 'Settings', icon: '⚙️' }
@@ -144,7 +142,7 @@ function renderPage() {
         dashboard: renderDashboard,
         sales: renderSales,
         purchases: renderPurchases,
-        products: renderInventory,
+        inventory: renderInventory,
         customers: renderCustomers,
         suppliers: renderSuppliers,
         expenses: renderExpenses,
@@ -185,7 +183,8 @@ async function renderDashboard(container) {
                 <p style="color: ${profit >= 0 ? 'var(--success)' : 'var(--danger)'}">₹${profit.toFixed(2)}</p>
             </div>
         </div>
-        <div class='card'><h2>Statement History</h2><div class='mobile-history'>${[...sales,...purchases,...expenses].slice(-8).map(x=>`<div class=history-item>₹${x.total||x.amount||0}</div>`).join('')}</div></div><div class="card"><h2>Low Stock Items</h2>
+        <div class="card">
+            <h2>Low Stock Items</h2>
             ${lowStock.length ? `
                 <table>
                     <thead><tr><th>Product</th><th>Quantity</th></tr></thead>
