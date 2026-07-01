@@ -1,49 +1,58 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Inventory - Small Business Management</title>
+    <title>Business Manager & Statement Ledger</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
-    <!-- Login Screen -->
-    <div id="login-screen">
-        <div class="login-card">
-            <h1>Daily Inventory</h1>
-            <form id="login-form">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="login-email" required>
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" id="login-password" required>
-                </div>
-                <button type="submit">Login</button>
-            </form>
-            <div id="login-error"></div>
+    <div class="app-container">
+        <!-- Navigation Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>LedgerApp</h2>
+            </div>
+            <nav class="nav-menu">
+                <button class="nav-item active" onclick="switchTab('dashboard')">📊 Dashboard & Statements</button>
+                <button class="nav-item" onclick="switchTab('inventory')">📦 Inventory / Products</button>
+                <button class="nav-item" onclick="switchTab('sales')">💰 Sales Entries</button>
+                <button class="nav-item" onclick="switchTab('expenses')">📉 Expense Tracker</button>
+                <button class="nav-item" onclick="switchTab('settings')">⚙️ Settings</button>
+            </nav>
+        </aside>
+
+        <!-- Main Workspace Area -->
+        <main class="main-content">
+            <header class="top-bar">
+                <h1 id="page-title">Dashboard & Statements</h1>
+                <div class="session-status" id="session-badge">🔒 Session Locked</div>
+            </header>
+
+            <div id="content-area" class="content-wrapper">
+                <!-- Dynamically populated via app.js -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Passcode Verification Modal Overlay -->
+    <div id="passcode-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-icon">🔐</div>
+            <h3>Security Clearance Required</h3>
+            <p>Enter your 4-digit passcode to perform this action.</p>
+            <input type="password" id="passcode-input" maxlength="4" placeholder="••••" autocomplete="off">
+            <div id="passcode-error" class="error-msg"></div>
+            <div class="modal-actions">
+                <button id="passcode-submit" class="btn-primary">Verify PIN</button>
+                <button id="passcode-cancel" class="btn-secondary">Cancel</button>
+            </div>
         </div>
     </div>
 
-    <!-- Main App (Hidden Until Login) -->
-    <div id="app" class="hidden">
-        <header>
-            <h1>Daily Inventory</h1>
-            <div class="header-actions">
-                <button id="theme-toggle">Toggle Theme</button>
-                <div id="auth-container"></div>
-            </div>
-        </header>
-        <nav id="sidebar">
-            <ul id="nav-menu"></ul>
-        </nav>
-        <main id="content"></main>
-    </div>
     <script src="app.js"></script>
 </body>
 </html>
