@@ -49,6 +49,7 @@ function initApp() {
     initAuth();
     initLoginForm();
     initOfflineDetection();
+    initPasscodeModal(); // Initialize passcode modal
 }
 
 function initTheme() {
@@ -124,6 +125,8 @@ function initLoginForm() {
 
 function logout() {
     auth.signOut();
+    // Clear passcode verification on logout
+    sessionStorage.removeItem('passcodeVerified');
 }
 
 function initOfflineDetection() {
@@ -153,17 +156,36 @@ function renderPage() {
 }
 
 async function renderDashboard(container) {
-    const [sales, purchases, expenses, inventory] = await Promise.all([
+    const [sales, purchases, expenses, inventory, customers, suppliers] = await Promise.all([
         getCollection('sales'),
         getCollection('purchases'),
         getCollection('expenses'),
-        getCollection('inventory')
+        getCollection('inventory'),
+        getCollection('customers'),
+        getCollection('suppliers')
     ]);
     const totalSales = sales.reduce((sum, s) => sum + (s.total || 0), 0);
     const totalPurchases = purchases.reduce((sum, p) => sum + (p.total || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
     const profit = totalSales - totalPurchases - totalExpenses;
-    const lowStock = inventory.filter(i => (i.quantity || 0) < 10);
+    
+    const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+    const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
+    const inventoryMap = Object.fromEntries(inventory.map(i => [i.id, i.name]));
+    
+    const allTransactions = [
+        ...sales.map(s => ({ type: 'sale', ...s })),
+        ...purchases.map(p => ({ type: 'purchase', ...p })),
+        ...expenses.map(e => ({ type: 'expense', ...e }))
+    ].sort((a, b) => {
+        const getDate = (item) => {
+            if (item.date) return new Date(item.date);
+            if (item.createdAt?.toDate) return item.createdAt.toDate();
+            return new Date(item.createdAt);
+        };
+        return getDate(b) - getDate(a);
+    });
+    
     container.innerHTML = `
         <div class="stats-grid">
             <div class="stat-card">
@@ -184,13 +206,54 @@ async function renderDashboard(container) {
             </div>
         </div>
         <div class="card">
-            <h2>Low Stock Items</h2>
-            ${lowStock.length ? `
+            <h2>Recent Transactions</h2>
+            ${allTransactions.length ? `
                 <table>
-                    <thead><tr><th>Product</th><th>Quantity</th></tr></thead>
-                    <tbody>${lowStock.map(i => `<tr><td>${i.name}</td><td>${i.quantity}</td></tr>`).join('')}</tbody>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Details</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${allTransactions.slice(0, 20).map(t => {
+                            let details = '';
+                            let amount = 0;
+                            let typeColor = '';
+                            let typeLabel = '';
+                            if (t.type === 'sale') {
+                                details = `${customerMap[t.customerId] || 'Unknown'} - ${inventoryMap[t.productId] || 'Unknown'}`;
+                                amount = t.total;
+                                typeColor = 'var(--success)';
+                                typeLabel = 'Sale';
+                            } else if (t.type === 'purchase') {
+                                details = `${supplierMap[t.supplierId] || 'Unknown'} - ${inventoryMap[t.productId] || 'Unknown'}`;
+                                amount = t.total;
+                                typeColor = 'var(--primary)';
+                                typeLabel = 'Purchase';
+                            } else {
+                                details = t.category + (t.description ? ` - ${t.description}` : '');
+                                amount = t.amount;
+                                typeColor = 'var(--danger)';
+                                typeLabel = 'Expense';
+                            }
+                            const getDate = (item) => {
+                                if (item.date) return new Date(item.date);
+                                if (item.createdAt?.toDate) return item.createdAt.toDate();
+                                return new Date(item.createdAt);
+                            };
+                            return `<tr>
+                                <td>${getDate(t).toLocaleDateString()}</td>
+                                <td style="color: ${typeColor}; font-weight: 600">${typeLabel}</td>
+                                <td>${details}</td>
+                                <td>₹${amount.toFixed(2)}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
                 </table>
-            ` : '<p>No low stock items</p>'}
+            ` : '<p>No transactions yet</p>'}
         </div>
     `;
 }
@@ -244,6 +307,9 @@ async function renderSales(container) {
 
 async function handleSaleSubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const customerId = document.getElementById('sale-customer').value;
     const productId = document.getElementById('sale-product').value;
     const qty = parseInt(document.getElementById('sale-qty').value);
@@ -339,6 +405,9 @@ async function renderPurchases(container) {
 
 async function handlePurchaseSubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const supplierId = document.getElementById('purchase-supplier').value;
     const productId = document.getElementById('purchase-product').value;
     const qty = parseInt(document.getElementById('purchase-qty').value);
@@ -429,6 +498,9 @@ async function renderInventory(container) {
 
 async function handleInventorySubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const product = {
         name: document.getElementById('inv-name').value,
         sku: document.getElementById('inv-sku').value,
@@ -509,6 +581,9 @@ async function renderCustomers(container) {
 
 async function handleCustomerSubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const customer = {
         name: document.getElementById('cust-name').value,
         email: document.getElementById('cust-email').value,
@@ -586,6 +661,9 @@ async function renderSuppliers(container) {
 
 async function handleSupplierSubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const supplier = {
         name: document.getElementById('sup-name').value,
         email: document.getElementById('sup-email').value,
@@ -659,6 +737,9 @@ async function renderExpenses(container) {
 
 async function handleExpenseSubmit(e) {
     e.preventDefault();
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const expense = {
         category: document.getElementById('exp-cat').value,
         description: document.getElementById('exp-desc').value,
@@ -751,8 +832,260 @@ function renderSettings(container) {
                 <input type="text" id="sheets-url" placeholder="Enter webhook URL" value="${localStorage.getItem('sheetsUrl') || ''}">
                 <button class="secondary" onclick="localStorage.setItem('sheetsUrl', document.getElementById('sheets-url').value)">Save</button>
             </div>
+            <!-- PASSCODE SECTION START -->
+            <div class="form-group">
+                <label>Passcode (for data entry)</label>
+                <div id="passcode-settings">
+                    <!-- Content will be injected by initPasscodeSettings -->
+                </div>
+            </div>
+            <!-- PASSCODE SECTION END -->
         </div>
     `;
+    // Initialize passcode settings after rendering
+    initPasscodeSettings();
+}
+
+// PASSCODE HELPER FUNCTIONS
+async function getPasscode() {
+    try {
+        const doc = await db.collection('settings').doc('app_settings').get();
+        if (doc.exists) {
+            const data = doc.data();
+            return data.passcode || null;
+        }
+        return null;
+    } catch (err) {
+        console.error('Error getting passcode:', err);
+        return null;
+    }
+}
+
+async function setPasscode(code) {
+    try {
+        await db.collection('settings').doc('app_settings').set({
+            passcode: code
+        }, { merge: true });
+    } catch (err) {
+        console.error('Error setting passcode:', err);
+        throw err;
+    }
+}
+
+async function removePasscode() {
+    try {
+        await db.collection('settings').doc('app_settings').update({
+            passcode: firebase.firestore.FieldValue.delete()
+        });
+    } catch (err) {
+        console.error('Error removing passcode:', err);
+        throw err;
+    }
+}
+
+// PASSCODE MODAL FUNCTIONS
+let passcodeModal = null;
+let passcodeInput = null;
+let passcodeError = null;
+let passcodeCancelBtn = null;
+let passcodeSubmitBtn = null;
+
+function initPasscodeModal() {
+    passcodeModal = document.getElementById('passcode-modal');
+    passcodeInput = document.getElementById('passcode-input');
+    passcodeError = document.getElementById('passcode-error');
+    passcodeCancelBtn = document.getElementById('passcode-cancel');
+    passcodeSubmitBtn = document.getElementById('passcode-submit');
+
+    if (!passcodeModal) return;
+
+    passcodeCancelBtn.addEventListener('click', hidePasscodeModal);
+    passcodeSubmitBtn.addEventListener('click', handlePasscodeSubmit);
+    passcodeInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handlePasscodeSubmit();
+        }
+    });
+}
+
+function showPasscodeModal() {
+    if (passcodeModal) {
+        passcodeModal.classList.remove('hidden');
+        passcodeInput.value = '';
+        passcodeError.textContent = '';
+        passcodeInput.focus();
+    }
+}
+
+function hidePasscodeModal() {
+    if (passcodeModal) {
+        passcodeModal.classList.add('hidden');
+    }
+}
+
+async function handlePasscodeSubmit() {
+    const code = passcodeInput.value.trim();
+    if (code.length !== 4 || !/^\d{4}$/.test(code)) {
+        passcodeError.textContent = 'Please enter a valid 4-digit passcode';
+        return;
+    }
+
+    const storedPasscode = await getPasscode();
+    if (storedPasscode === null) {
+        // This should not happen because we only show modal when passcode is set
+        passcodeError.textContent = 'Passcode not set';
+        return;
+    }
+
+    if (code === storedPasscode) {
+        sessionStorage.setItem('passcodeVerified', 'true');
+        hidePasscodeModal();
+    } else {
+        passcodeError.textContent = 'Incorrect passcode';
+    }
+}
+
+// PASSCODE SETTINGS FUNCTIONS
+async function initPasscodeSettings() {
+    const passcodeSettingsDiv = document.getElementById('passcode-settings');
+    if (!passcodeSettingsDiv) return;
+
+    const passcode = await getPasscode();
+    if (passcode === null) {
+        passcodeSettingsDiv.innerHTML = `
+            <p>No passcode set</p>
+            <div class="form-group">
+                <label>Set New 4-Digit Passcode</label>
+                <input type="password" id="new-passcode" maxlength="4" placeholder="____" />
+                <button class="secondary" onclick="setNewPasscode()">Set Passcode</button>
+            </div>
+        `;
+    } else {
+        passcodeSettingsDiv.innerHTML = `
+            <p>Passcode is set (****)</p>
+            <div class="form-group">
+                <button class="secondary" onclick="showChangePasscodeForm()">Change Passcode</button>
+                <button class="btn-danger" onclick="removePasscodeSetting()">Remove Passcode</button>
+            </div>
+            <div id="change-passcode-form" class="hidden">
+                <label>Enter New 4-Digit Passcode</label>
+                <input type="password" id="change-passcode-input" maxlength="4" placeholder="____" />
+                <button class="secondary" onclick="saveNewPasscode()">Save</button>
+                <button class="secondary" onclick="hideChangePasscodeForm()">Cancel</button>
+                <div id="change-passcode-error" class="error"></div>
+            </div>
+        `;
+    }
+}
+
+async function setNewPasscode() {
+    const input = document.getElementById('new-passcode');
+    const code = input.value.trim();
+    if (code.length !== 4 || !/^\d{4}$/.test(code)) {
+        alert('Please enter a valid 4-digit passcode');
+        return;
+    }
+    try {
+        await setPasscode(code);
+        alert('Passcode set successfully');
+        input.value = '';
+        initPasscodeSettings();
+    } catch (err) {
+        alert('Error setting passcode: ' + err.message);
+    }
+}
+
+function showChangePasscodeForm() {
+    document.getElementById('change-passcode-form').classList.remove('hidden');
+    document.getElementById('change-passcode-input').focus();
+}
+
+function hideChangePasscodeForm() {
+    document.getElementById('change-passcode-form').classList.add('hidden');
+    document.getElementById('change-passcode-input').value = '';
+    document.getElementById('change-passcode-error').textContent = '';
+}
+
+async function saveNewPasscode() {
+    const input = document.getElementById('change-passcode-input');
+    const code = input.value.trim();
+    if (code.length !== 4 || !/^\d{4}$/.test(code)) {
+        document.getElementById('change-passcode-error').textContent = 'Please enter a valid 4-digit passcode';
+        return;
+    }
+    try {
+        await setPasscode(code);
+        alert('Passcode changed successfully');
+        hideChangePasscodeForm();
+        initPasscodeSettings();
+    } catch (err) {
+        document.getElementById('change-passcode-error').textContent = 'Error changing passcode: ' + err.message;
+    }
+}
+
+async function removePasscodeSetting() {
+    if (!confirm('Are you sure you want to remove the passcode?')) {
+        return;
+    }
+    try {
+        await removePasscode();
+        alert('Passcode removed successfully');
+        initPasscodeSettings();
+    } catch (err) {
+        alert('Error removing passcode: ' + err.message);
+    }
+}
+
+// PASSCODE CHECK FUNCTION
+async function checkPasscodeRequired() {
+    const passcode = await getPasscode();
+    if (passcode === null) {
+        return true; // No passcode set, allowed
+    }
+
+    // Check if already verified in this session
+    if (sessionStorage.getItem('passcodeVerified') === 'true') {
+        return true;
+    }
+
+    // Show modal and wait for user input
+    return new Promise((resolve) => {
+        showPasscodeModal();
+        
+        const submitHandler = () => {
+            const code = passcodeInput.value.trim();
+            if (code.length === 4 && /^\d{4}$/.test(code) && code === passcode) {
+                sessionStorage.setItem('passcodeVerified', 'true');
+                hidePasscodeModal();
+                // Clean up event listeners
+                passcodeSubmitBtn.removeEventListener('click', submitHandler);
+                passcodeCancelBtn.removeEventListener('click', cancelHandler);
+                passcodeInput.removeEventListener('keypress', keypressHandler);
+                resolve(true);
+            } else {
+                passcodeError.textContent = 'Incorrect passcode';
+            }
+        };
+        
+        const cancelHandler = () => {
+            hidePasscodeModal();
+            // Clean up event listeners
+            passcodeSubmitBtn.removeEventListener('click', submitHandler);
+            passcodeCancelBtn.removeEventListener('click', cancelHandler);
+            passcodeInput.removeEventListener('keypress', keypressHandler);
+            resolve(false);
+        };
+        
+        const keypressHandler = (e) => {
+            if (e.key === 'Enter') {
+                submitHandler();
+            }
+        };
+        
+        passcodeSubmitBtn.addEventListener('click', submitHandler);
+        passcodeCancelBtn.addEventListener('click', cancelHandler);
+        passcodeInput.addEventListener('keypress', keypressHandler);
+    });
 }
 
 async function getCollection(collection) {
@@ -804,6 +1137,9 @@ async function updateDocument(collection, id, data) {
 }
 
 async function deleteItem(collection, id) {
+    if (!(await checkPasscodeRequired())) {
+        return;
+    }
     const doc = await getDocument(collection, id);
     if (!doc) return;
     await db.collection(COLLECTIONS.deleted).add({

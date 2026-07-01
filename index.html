@@ -44,6 +44,18 @@
         </nav>
         <main id="content"></main>
     </div>
+    <!-- Passcode Modal -->
+    <div id="passcode-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Enter Passcode</h3>
+            <input type="password" id="passcode-input" maxlength="4" placeholder="____" />
+            <div class="modal-actions">
+                <button id="passcode-cancel">Cancel</button>
+                <button id="passcode-submit">Submit</button>
+            </div>
+            <div id="passcode-error" class="error"></div>
+        </div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>
