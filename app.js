@@ -302,6 +302,24 @@ async function renderSales(container) {
     
     window.inventoryData = inventory;
     window.customersData = customers;
+    window.selectedCustomerId = null;
+    
+    const customerSelect = document.getElementById('sale-customer');
+    customerSelect.addEventListener('change', (e) => {
+        window.selectedCustomerId = e.target.value;
+        // Refresh all existing items when customer changes
+        const items = document.querySelectorAll('.sale-item');
+        items.forEach(item => {
+            const productSelect = item.querySelector('.sale-item-product');
+            const currentValue = productSelect.value;
+            const itemId = item.id.replace('sale-item-', '');
+            updateProductOptions(productSelect, itemId);
+            if (currentValue) {
+                productSelect.value = currentValue;
+                updateSaleItemPrice(itemId);
+            }
+        });
+    });
     
     document.getElementById('sale-form').addEventListener('submit', handleSaleSubmit);
     document.getElementById('sales-search').addEventListener('input', (e) => renderSalesList(sales, e.target.value));
@@ -311,27 +329,72 @@ async function renderSales(container) {
 function addSaleItem() {
     const itemsList = document.getElementById('sale-items-list');
     const itemId = Date.now();
-    const itemHtml = `
-        <div class="sale-item" id="sale-item-${itemId}" style="border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-            <div class="form-group">
-                <label>Product</label>
-                <select class="sale-item-product" onchange="updateSaleItemPrice(${itemId})">
-                    <option value="">Select Product</option>
-                    ${window.inventoryData.map(i => `<option value="${i.id}" data-price="${i.sellingPrice}" data-stock="${i.quantity}">${i.name} (${i.quantity} in stock)</option>`).join('')}
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Quantity</label>
-                <input type="number" class="sale-item-qty" min="1" value="1" onchange="updateSaleTotal()">
-            </div>
-            <div class="form-group">
-                <label>Unit Price</label>
-                <input type="number" class="sale-item-price" step="0.01" value="0" onchange="updateSaleTotal()">
-            </div>
-            <button type="button" class="btn-danger btn-sm" onclick="removeSaleItem(${itemId})">Remove Item</button>
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'sale-item';
+    itemDiv.id = `sale-item-${itemId}`;
+    itemDiv.style.cssText = 'border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;';
+    
+    itemDiv.innerHTML = `
+        <div class="form-group">
+            <label>Product</label>
+            <select class="sale-item-product" onchange="updateSaleItemPrice(${itemId})">
+                <option value="">Select Product</option>
+            </select>
         </div>
+        <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" class="sale-item-qty" min="1" value="1" onchange="updateSaleTotal()">
+        </div>
+        <div class="form-group">
+            <label>Unit Price</label>
+            <input type="number" class="sale-item-price" step="0.01" value="0" onchange="updateSaleTotal()">
+        </div>
+        <button type="button" class="btn-danger btn-sm" onclick="removeSaleItem(${itemId})">Remove Item</button>
     `;
-    itemsList.insertAdjacentHTML('beforeend', itemHtml);
+    
+    itemsList.appendChild(itemDiv);
+    const productSelect = itemDiv.querySelector('.sale-item-product');
+    updateProductOptions(productSelect, itemId);
+}
+
+function updateProductOptions(productSelect, itemId) {
+    const customerId = window.selectedCustomerId;
+    const inventory = window.inventoryData;
+    const customers = window.customersData;
+    
+    // Separate linked and non-linked products
+    const linkedProducts = [];
+    const otherProducts = [];
+    
+    inventory.forEach(product => {
+        const isLinked = customerId && (product.linkedCustomers || []).some(lc => lc.customerId === customerId);
+        if (isLinked) {
+            linkedProducts.push(product);
+        } else {
+            otherProducts.push(product);
+        }
+    });
+    
+    let optionsHtml = '<option value="">Select Product</option>';
+    
+    if (linkedProducts.length > 0) {
+        optionsHtml += '<optgroup label="Linked Products">';
+        linkedProducts.forEach(product => {
+            const customerLink = (product.linkedCustomers || []).find(lc => lc.customerId === customerId);
+            const customer = customers.find(c => c.id === customerId);
+            const price = customerLink ? customerLink.price : product.sellingPrice;
+            optionsHtml += `<option value="${product.id}" data-price="${price}">${product.name} (${customer ? customer.name : 'Linked'}) - ₹${price.toFixed(2)}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+    }
+    
+    optionsHtml += '<optgroup label="All Products">';
+    otherProducts.forEach(product => {
+        optionsHtml += `<option value="${product.id}" data-price="${product.sellingPrice}">${product.name} - ₹${product.sellingPrice.toFixed(2)}</option>`;
+    });
+    optionsHtml += '</optgroup>';
+    
+    productSelect.innerHTML = optionsHtml;
 }
 
 function updateSaleItemPrice(itemId) {
@@ -387,12 +450,6 @@ async function handleSaleSubmit(e) {
             return;
         }
         
-        const product = window.inventoryData.find(p => p.id === productId);
-        if (product && qty > product.quantity) {
-            alert(`Not enough stock for ${product.name}. Available: ${product.quantity}`);
-            return;
-        }
-        
         totalAmount += qty * price;
         saleItemsData.push({ productId, quantity: qty, unitPrice: price });
     }
@@ -419,7 +476,7 @@ async function handleSaleSubmit(e) {
         };
         await addDocument('sales', singleSale);
         
-        // Update inventory
+        // Update inventory (still update but don't check stock)
         const product = await getDocument('inventory', itemData.productId);
         if (product) {
             await updateDocument('inventory', itemData.productId, { quantity: product.quantity - itemData.quantity });
@@ -499,6 +556,24 @@ async function renderPurchases(container) {
     
     window.inventoryData = inventory;
     window.suppliersData = suppliers;
+    window.selectedSupplierId = null;
+    
+    const supplierSelect = document.getElementById('purchase-supplier');
+    supplierSelect.addEventListener('change', (e) => {
+        window.selectedSupplierId = e.target.value;
+        // Refresh all existing items when supplier changes
+        const items = document.querySelectorAll('.purchase-item');
+        items.forEach(item => {
+            const productSelect = item.querySelector('.purchase-item-product');
+            const currentValue = productSelect.value;
+            const itemId = item.id.replace('purchase-item-', '');
+            updatePurchaseProductOptions(productSelect, itemId);
+            if (currentValue) {
+                productSelect.value = currentValue;
+                updatePurchaseItemCost(itemId);
+            }
+        });
+    });
     
     document.getElementById('purchase-form').addEventListener('submit', handlePurchaseSubmit);
     document.getElementById('purchases-search').addEventListener('input', (e) => renderPurchasesList(purchases, e.target.value));
@@ -508,27 +583,70 @@ async function renderPurchases(container) {
 function addPurchaseItem() {
     const itemsList = document.getElementById('purchase-items-list');
     const itemId = Date.now();
-    const itemHtml = `
-        <div class="purchase-item" id="purchase-item-${itemId}" style="border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-            <div class="form-group">
-                <label>Product</label>
-                <select class="purchase-item-product" onchange="updatePurchaseItemCost(${itemId})">
-                    <option value="">Select Product</option>
-                    ${window.inventoryData.map(i => `<option value="${i.id}" data-cost="${i.costPrice}">${i.name}</option>`).join('')}
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Quantity</label>
-                <input type="number" class="purchase-item-qty" min="1" value="1" onchange="updatePurchaseTotal()">
-            </div>
-            <div class="form-group">
-                <label>Unit Cost</label>
-                <input type="number" class="purchase-item-cost" step="0.01" value="0" onchange="updatePurchaseTotal()">
-            </div>
-            <button type="button" class="btn-danger btn-sm" onclick="removePurchaseItem(${itemId})">Remove Item</button>
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'purchase-item';
+    itemDiv.id = `purchase-item-${itemId}`;
+    itemDiv.style.cssText = 'border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;';
+    
+    itemDiv.innerHTML = `
+        <div class="form-group">
+            <label>Product</label>
+            <select class="purchase-item-product" onchange="updatePurchaseItemCost(${itemId})">
+                <option value="">Select Product</option>
+            </select>
         </div>
+        <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" class="purchase-item-qty" min="1" value="1" onchange="updatePurchaseTotal()">
+        </div>
+        <div class="form-group">
+            <label>Unit Cost</label>
+            <input type="number" class="purchase-item-cost" step="0.01" value="0" onchange="updatePurchaseTotal()">
+        </div>
+        <button type="button" class="btn-danger btn-sm" onclick="removePurchaseItem(${itemId})">Remove Item</button>
     `;
-    itemsList.insertAdjacentHTML('beforeend', itemHtml);
+    
+    itemsList.appendChild(itemDiv);
+    const productSelect = itemDiv.querySelector('.purchase-item-product');
+    updatePurchaseProductOptions(productSelect, itemId);
+}
+
+function updatePurchaseProductOptions(productSelect, itemId) {
+    const supplierId = window.selectedSupplierId;
+    const inventory = window.inventoryData;
+    const suppliers = window.suppliersData;
+    
+    // Separate linked and non-linked products
+    const linkedProducts = [];
+    const otherProducts = [];
+    
+    inventory.forEach(product => {
+        const isLinked = supplierId && (product.linkedSuppliers || []).some(ls => ls.supplierId === supplierId);
+        if (isLinked) {
+            linkedProducts.push(product);
+        } else {
+            otherProducts.push(product);
+        }
+    });
+    
+    let optionsHtml = '<option value="">Select Product</option>';
+    
+    if (linkedProducts.length > 0) {
+        optionsHtml += '<optgroup label="Linked Products">';
+        linkedProducts.forEach(product => {
+            const supplier = suppliers.find(s => s.id === supplierId);
+            optionsHtml += `<option value="${product.id}" data-cost="${product.costPrice}">${product.name} (${supplier ? supplier.name : 'Linked'}) - ₹${product.costPrice.toFixed(2)}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+    }
+    
+    optionsHtml += '<optgroup label="All Products">';
+    otherProducts.forEach(product => {
+        optionsHtml += `<option value="${product.id}" data-cost="${product.costPrice}">${product.name} - ₹${product.costPrice.toFixed(2)}</option>`;
+    });
+    optionsHtml += '</optgroup>';
+    
+    productSelect.innerHTML = optionsHtml;
 }
 
 function updatePurchaseItemCost(itemId) {
@@ -640,6 +758,8 @@ async function renderPurchasesList(purchases, search = '') {
 
 async function renderInventory(container) {
     const inventory = await getCollection('inventory');
+    const customers = await getCollection('customers');
+    const suppliers = await getCollection('suppliers');
     container.innerHTML = `
         <div class="card">
             <h2>Add Product</h2>
@@ -678,7 +798,7 @@ async function renderInventory(container) {
     `;
     document.getElementById('inventory-form').addEventListener('submit', handleInventorySubmit);
     document.getElementById('inventory-search').addEventListener('input', (e) => renderInventoryList(inventory, e.target.value));
-    renderInventoryList(inventory);
+    renderInventoryList(inventory, customers, suppliers);
 }
 
 async function handleInventorySubmit(e) {
@@ -698,14 +818,14 @@ async function handleInventorySubmit(e) {
     renderInventory(document.getElementById('content'));
 }
 
-async function renderInventoryList(inventory, search = '') {
+async function renderInventoryList(inventory, customers, suppliers, search = '') {
     const filtered = inventory.filter(i => 
         !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sku || '').toLowerCase().includes(search.toLowerCase())
     );
     document.getElementById('inventory-list').innerHTML = `
         <table>
             <thead>
-                <tr><th>Name</th><th>SKU</th><th>Quantity</th><th>Cost</th><th>Price</th><th>Actions</th></tr>
+                <tr><th>Name</th><th>SKU</th><th>Quantity</th><th>Cost</th><th>Price</th><th>Linked Customers</th><th>Linked Suppliers</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 ${filtered.map(i => `
@@ -715,7 +835,17 @@ async function renderInventoryList(inventory, search = '') {
                         <td style="color: ${i.quantity < 10 ? 'var(--danger)' : 'var(--success)'}">${i.quantity}</td>
                         <td>₹${i.costPrice.toFixed(2)}</td>
                         <td>₹${i.sellingPrice.toFixed(2)}</td>
+                        <td>${(i.linkedCustomers || []).map(lc => {
+                            const customer = customers.find(c => c.id === lc.customerId);
+                            return customer ? `${customer.name} (₹${lc.price.toFixed(2)})` : '';
+                        }).join(', ') || '-'}</td>
+                        <td>${(i.linkedSuppliers || []).map(ls => {
+                            const supplier = suppliers.find(s => s.id === ls.supplierId);
+                            return supplier ? supplier.name : '';
+                        }).join(', ') || '-'}</td>
                         <td class="actions">
+                            <button class="btn-sm secondary" onclick="showEditProductModal('${i.id}')">Edit</button>
+                            <button class="btn-sm secondary" onclick="showLinkProductModal('${i.id}')">Link</button>
                             <button class="btn-sm btn-danger" onclick="deleteItem('inventory', '${i.id}')">Delete</button>
                         </td>
                     </tr>
@@ -725,8 +855,64 @@ async function renderInventoryList(inventory, search = '') {
     `;
 }
 
+async function showEditProductModal(productId) {
+    const product = await getDocument('inventory', productId);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'edit-product-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Edit Product</h3>
+            <form id="edit-product-form">
+                <div class="form-group">
+                    <label>Product Name</label>
+                    <input type="text" id="edit-inv-name" required value="${product.name}">
+                </div>
+                <div class="form-group">
+                    <label>SKU</label>
+                    <input type="text" id="edit-inv-sku" value="${product.sku || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Quantity</label>
+                    <input type="number" id="edit-inv-qty" min="0" required value="${product.quantity}">
+                </div>
+                <div class="form-group">
+                    <label>Cost Price</label>
+                    <input type="number" id="edit-inv-cost" step="0.01" required value="${product.costPrice}">
+                </div>
+                <div class="form-group">
+                    <label>Selling Price</label>
+                    <input type="number" id="edit-inv-price" step="0.01" required value="${product.sellingPrice}">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="secondary" onclick="document.getElementById('edit-product-modal').remove()">Cancel</button>
+                    <button type="submit">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('edit-product-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!(await checkPasscodeRequired())) {
+            return;
+        }
+        const updatedProduct = {
+            name: document.getElementById('edit-inv-name').value,
+            sku: document.getElementById('edit-inv-sku').value,
+            quantity: parseInt(document.getElementById('edit-inv-qty').value),
+            costPrice: parseFloat(document.getElementById('edit-inv-cost').value),
+            sellingPrice: parseFloat(document.getElementById('edit-inv-price').value),
+        };
+        await updateDocument('inventory', productId, updatedProduct);
+        modal.remove();
+        renderInventory(document.getElementById('content'));
+    });
+}
+
 async function renderCustomers(container) {
     const customers = await getCollection('customers');
+    const inventory = await getCollection('inventory');
     container.innerHTML = `
         <div class="card">
             <h2>Add Customer</h2>
@@ -760,8 +946,8 @@ async function renderCustomers(container) {
         </div>
     `;
     document.getElementById('customer-form').addEventListener('submit', handleCustomerSubmit);
-    document.getElementById('customers-search').addEventListener('input', (e) => renderCustomersList(customers, e.target.value));
-    renderCustomersList(customers);
+    document.getElementById('customers-search').addEventListener('input', (e) => renderCustomersList(customers, inventory, e.target.value));
+    renderCustomersList(customers, inventory);
 }
 
 async function handleCustomerSubmit(e) {
@@ -780,33 +966,94 @@ async function handleCustomerSubmit(e) {
     renderCustomers(document.getElementById('content'));
 }
 
-async function renderCustomersList(customers, search = '') {
+async function renderCustomersList(customers, inventory, search = '') {
     const filtered = customers.filter(c => 
         !search || c.name.toLowerCase().includes(search.toLowerCase())
     );
     document.getElementById('customers-list').innerHTML = `
         <table>
             <thead>
-                <tr><th>Name</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+                <tr><th>Name</th><th>Email</th><th>Phone</th><th>Linked Products</th><th>Actions</th></tr>
             </thead>
             <tbody>
-                ${filtered.map(c => `
-                    <tr>
-                        <td>${c.name}</td>
-                        <td>${c.email || '-'}</td>
-                        <td>${c.phone || '-'}</td>
-                        <td class="actions">
-                            <button class="btn-sm btn-danger" onclick="deleteItem('customers', '${c.id}')">Delete</button>
-                        </td>
-                    </tr>
-                `).join('')}
+                ${filtered.map(c => {
+                    const linkedProducts = inventory.filter(i => 
+                        (i.linkedCustomers || []).some(lc => lc.customerId === c.id)
+                    ).map(i => {
+                        const link = (i.linkedCustomers || []).find(lc => lc.customerId === c.id);
+                        return `${i.name} (₹${link.price.toFixed(2)})`;
+                    }).join(', ');
+                    return `
+                        <tr>
+                            <td>${c.name}</td>
+                            <td>${c.email || '-'}</td>
+                            <td>${c.phone || '-'}</td>
+                            <td>${linkedProducts || '-'}</td>
+                            <td class="actions">
+                                <button class="btn-sm secondary" onclick="showEditCustomerModal('${c.id}')">Edit</button>
+                                <button class="btn-sm btn-danger" onclick="deleteItem('customers', '${c.id}')">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
             </tbody>
         </table>
     `;
 }
 
+async function showEditCustomerModal(customerId) {
+    const customer = await getDocument('customers', customerId);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'edit-customer-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Edit Customer</h3>
+            <form id="edit-customer-form">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="edit-cust-name" required value="${customer.name}">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="edit-cust-email" value="${customer.email || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="tel" id="edit-cust-phone" value="${customer.phone || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <textarea id="edit-cust-address">${customer.address || ''}</textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="secondary" onclick="document.getElementById('edit-customer-modal').remove()">Cancel</button>
+                    <button type="submit">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('edit-customer-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!(await checkPasscodeRequired())) {
+            return;
+        }
+        const updatedCustomer = {
+            name: document.getElementById('edit-cust-name').value,
+            email: document.getElementById('edit-cust-email').value,
+            phone: document.getElementById('edit-cust-phone').value,
+            address: document.getElementById('edit-cust-address').value,
+        };
+        await updateDocument('customers', customerId, updatedCustomer);
+        modal.remove();
+        renderCustomers(document.getElementById('content'));
+    });
+}
+
 async function renderSuppliers(container) {
     const suppliers = await getCollection('suppliers');
+    const inventory = await getCollection('inventory');
     container.innerHTML = `
         <div class="card">
             <h2>Add Supplier</h2>
@@ -840,8 +1087,8 @@ async function renderSuppliers(container) {
         </div>
     `;
     document.getElementById('supplier-form').addEventListener('submit', handleSupplierSubmit);
-    document.getElementById('suppliers-search').addEventListener('input', (e) => renderSuppliersList(suppliers, e.target.value));
-    renderSuppliersList(suppliers);
+    document.getElementById('suppliers-search').addEventListener('input', (e) => renderSuppliersList(suppliers, inventory, e.target.value));
+    renderSuppliersList(suppliers, inventory);
 }
 
 async function handleSupplierSubmit(e) {
@@ -860,29 +1107,86 @@ async function handleSupplierSubmit(e) {
     renderSuppliers(document.getElementById('content'));
 }
 
-async function renderSuppliersList(suppliers, search = '') {
+async function renderSuppliersList(suppliers, inventory, search = '') {
     const filtered = suppliers.filter(s => 
         !search || s.name.toLowerCase().includes(search.toLowerCase())
     );
     document.getElementById('suppliers-list').innerHTML = `
         <table>
             <thead>
-                <tr><th>Name</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+                <tr><th>Name</th><th>Email</th><th>Phone</th><th>Linked Products</th><th>Actions</th></tr>
             </thead>
             <tbody>
-                ${filtered.map(s => `
-                    <tr>
-                        <td>${s.name}</td>
-                        <td>${s.email || '-'}</td>
-                        <td>${s.phone || '-'}</td>
-                        <td class="actions">
-                            <button class="btn-sm btn-danger" onclick="deleteItem('suppliers', '${s.id}')">Delete</button>
-                        </td>
-                    </tr>
-                `).join('')}
+                ${filtered.map(s => {
+                    const linkedProducts = inventory.filter(i => 
+                        (i.linkedSuppliers || []).some(ls => ls.supplierId === s.id)
+                    ).map(i => i.name).join(', ');
+                    return `
+                        <tr>
+                            <td>${s.name}</td>
+                            <td>${s.email || '-'}</td>
+                            <td>${s.phone || '-'}</td>
+                            <td>${linkedProducts || '-'}</td>
+                            <td class="actions">
+                                <button class="btn-sm secondary" onclick="showEditSupplierModal('${s.id}')">Edit</button>
+                                <button class="btn-sm btn-danger" onclick="deleteItem('suppliers', '${s.id}')">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
             </tbody>
         </table>
     `;
+}
+
+async function showEditSupplierModal(supplierId) {
+    const supplier = await getDocument('suppliers', supplierId);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'edit-supplier-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>Edit Supplier</h3>
+            <form id="edit-supplier-form">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="edit-sup-name" required value="${supplier.name}">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="edit-sup-email" value="${supplier.email || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="tel" id="edit-sup-phone" value="${supplier.phone || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <textarea id="edit-sup-address">${supplier.address || ''}</textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="secondary" onclick="document.getElementById('edit-supplier-modal').remove()">Cancel</button>
+                    <button type="submit">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('edit-supplier-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!(await checkPasscodeRequired())) {
+            return;
+        }
+        const updatedSupplier = {
+            name: document.getElementById('edit-sup-name').value,
+            email: document.getElementById('edit-sup-email').value,
+            phone: document.getElementById('edit-sup-phone').value,
+            address: document.getElementById('edit-sup-address').value,
+        };
+        await updateDocument('suppliers', supplierId, updatedSupplier);
+        modal.remove();
+        renderSuppliers(document.getElementById('content'));
+    });
 }
 
 async function renderExpenses(container) {
@@ -1550,6 +1854,82 @@ function generateQR(type, id) {
     QRCode.toCanvas(document.getElementById('qr-canvas'), `${type}:${id}`, { width: 200 }, (err) => {
         if (err) console.error(err);
     });
+}
+
+async function showLinkProductModal(productId) {
+    const product = await getDocument('inventory', productId);
+    const customers = await getCollection('customers');
+    const suppliers = await getCollection('suppliers');
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'link-product-modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <h3>Link Product: ${product.name}</h3>
+            <div style="margin-bottom: 1rem;">
+                <h4>Link to Customers (with custom price)</h4>
+                <div id="customer-links-list" style="max-height: 150px; overflow-y: auto; margin-bottom: 1rem;">
+                    ${customers.map(customer => {
+                        const existingLink = (product.linkedCustomers || []).find(lc => lc.customerId === customer.id);
+                        return `
+                            <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem;">
+                                <input type="checkbox" id="customer-${customer.id}" ${existingLink ? 'checked' : ''} style="width: auto;">
+                                <label style="flex: 1; margin: 0;" for="customer-${customer.id}">${customer.name}</label>
+                                <input type="number" id="customer-price-${customer.id}" step="0.01" value="${existingLink ? existingLink.price : product.sellingPrice}" style="width: 120px;">
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <h4>Link to Suppliers</h4>
+                <div id="supplier-links-list" style="max-height: 150px; overflow-y: auto; margin-bottom: 1rem;">
+                    ${suppliers.map(supplier => {
+                        const existingLink = (product.linkedSuppliers || []).find(ls => ls.supplierId === supplier.id);
+                        return `
+                            <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem;">
+                                <input type="checkbox" id="supplier-${supplier.id}" ${existingLink ? 'checked' : ''} style="width: auto;">
+                                <label style="flex: 1; margin: 0;" for="supplier-${supplier.id}">${supplier.name}</label>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="secondary" onclick="document.getElementById('link-product-modal').remove()">Cancel</button>
+                <button onclick="saveProductLinks('${productId}')">Save Links</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function saveProductLinks(productId) {
+    const product = await getDocument('inventory', productId);
+    const customers = await getCollection('customers');
+    const suppliers = await getCollection('suppliers');
+    
+    const linkedCustomers = [];
+    customers.forEach(customer => {
+        const checkbox = document.getElementById(`customer-${customer.id}`);
+        if (checkbox && checkbox.checked) {
+            const priceInput = document.getElementById(`customer-price-${customer.id}`);
+            linkedCustomers.push({ customerId: customer.id, price: parseFloat(priceInput.value) });
+        }
+    });
+    
+    const linkedSuppliers = [];
+    suppliers.forEach(supplier => {
+        const checkbox = document.getElementById(`supplier-${supplier.id}`);
+        if (checkbox && checkbox.checked) {
+            linkedSuppliers.push({ supplierId: supplier.id });
+        }
+    });
+    
+    await updateDocument('inventory', productId, { linkedCustomers, linkedSuppliers });
+    document.getElementById('link-product-modal').remove();
+    renderInventory(document.getElementById('content'));
 }
 
 async function syncToSheets() {
