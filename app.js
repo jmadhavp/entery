@@ -28,11 +28,13 @@ const NAV_ITEMS = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'sales', label: 'Sales', icon: '💰' },
     { id: 'purchases', label: 'Purchases', icon: '🛒' },
+    { id: 'calendar', label: 'Calendar', icon: '📅' },
     { id: 'inventory', label: 'Inventory', icon: '📦' },
     { id: 'customers', label: 'Customers', icon: '👥' },
     { id: 'suppliers', label: 'Suppliers', icon: '🏪' },
     { id: 'expenses', label: 'Expenses', icon: '📉' },
     { id: 'reports', label: 'Reports', icon: '📈' },
+    { id: 'statement', label: 'Statement', icon: '📄' },
     { id: 'settings', label: 'Settings', icon: '⚙️' }
 ];
 
@@ -145,11 +147,13 @@ function renderPage() {
         dashboard: renderDashboard,
         sales: renderSales,
         purchases: renderPurchases,
+        calendar: renderCalendar,
         inventory: renderInventory,
         customers: renderCustomers,
         suppliers: renderSuppliers,
         expenses: renderExpenses,
         reports: renderReports,
+        statement: renderStatement,
         settings: renderSettings
     }[currentPage];
     if (renderFn) renderFn(content);
@@ -173,12 +177,41 @@ async function renderDashboard(container) {
     const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
     const inventoryMap = Object.fromEntries(inventory.map(i => [i.id, i.name]));
     
+    // Group sales by customerId + date, purchases by supplierId + date, keep expenses as-is
+    const groupedSales = {};
+    sales.forEach(s => {
+        const dateStr = new Date(s.date || s.createdAt).toLocaleDateString();
+        const key = `sale-${s.customerId}-${dateStr}`;
+        if (!groupedSales[key]) {
+            groupedSales[key] = { ...s, count: 1, dateStr, key: 'sale' };
+        } else {
+            groupedSales[key].total += (s.total || 0);
+            groupedSales[key].count += 1;
+        }
+    });
+    
+    const groupedPurchases = {};
+    purchases.forEach(p => {
+        const dateStr = new Date(p.date || p.createdAt).toLocaleDateString();
+        const key = `purchase-${p.supplierId}-${dateStr}`;
+        if (!groupedPurchases[key]) {
+            groupedPurchases[key] = { ...p, count: 1, dateStr, key: 'purchase' };
+        } else {
+            groupedPurchases[key].total += (p.total || 0);
+            groupedPurchases[key].count += 1;
+        }
+    });
+    
+    // Combine and sort by date descending
     const allTransactions = [
-        ...sales.map(s => ({ type: 'sale', ...s })),
-        ...purchases.map(p => ({ type: 'purchase', ...p })),
-        ...expenses.map(e => ({ type: 'expense', ...e }))
+        ...Object.values(groupedSales),
+        ...Object.values(groupedPurchases),
+        ...expenses
     ].sort((a, b) => {
         const getDate = (item) => {
+            if (item.dateStr) {
+                return new Date(item.dateStr);
+            }
             if (item.date) return new Date(item.date);
             if (item.createdAt?.toDate) return item.createdAt.toDate();
             return new Date(item.createdAt);
@@ -206,48 +239,60 @@ async function renderDashboard(container) {
             </div>
         </div>
         <div class="card">
-            <h2>Recent Transactions</h2>
+            <h2>Recent Transactions (Grouped by Party & Date)</h2>
             ${allTransactions.length ? `
                 <table>
                     <thead>
                         <tr>
                             <th>Date</th>
                             <th>Type</th>
-                            <th>Details</th>
+                            <th>Party</th>
+                            <th>Count</th>
                             <th>Amount</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${allTransactions.slice(0, 20).map(t => {
-                            let details = '';
+                            let partyName = '';
                             let amount = 0;
                             let typeColor = '';
                             let typeLabel = '';
-                            if (t.type === 'sale') {
-                                details = `${customerMap[t.customerId] || 'Unknown'} - ${inventoryMap[t.productId] || 'Unknown'}`;
-                                amount = t.total;
+                            let count = 1;
+                            
+                            if (t.key === 'sale') {
+                                partyName = customerMap[t.customerId] || 'Unknown';
+                                amount = t.total || 0;
                                 typeColor = 'var(--success)';
                                 typeLabel = 'Sale';
-                            } else if (t.type === 'purchase') {
-                                details = `${supplierMap[t.supplierId] || 'Unknown'} - ${inventoryMap[t.productId] || 'Unknown'}`;
-                                amount = t.total;
+                                count = t.count || 1;
+                            } else if (t.key === 'purchase') {
+                                partyName = supplierMap[t.supplierId] || 'Unknown';
+                                amount = t.total || 0;
                                 typeColor = 'var(--primary)';
                                 typeLabel = 'Purchase';
+                                count = t.count || 1;
                             } else {
-                                details = t.category + (t.description ? ` - ${t.description}` : '');
+                                partyName = t.category;
                                 amount = t.amount;
                                 typeColor = 'var(--danger)';
                                 typeLabel = 'Expense';
                             }
+                            
                             const getDate = (item) => {
-                                if (item.date) return new Date(item.date);
-                                if (item.createdAt?.toDate) return item.createdAt.toDate();
-                                return new Date(item.createdAt);
+                                if (item.dateStr) return item.dateStr;
+                                if (item.date) return new Date(item.date).toLocaleDateString();
+                                if (item.createdAt?.toDate) return item.createdAt.toDate().toLocaleDateString();
+                                return new Date(item.createdAt).toLocaleDateString();
                             };
-                            return `<tr>
-                                <td>${getDate(t).toLocaleDateString()}</td>
+                            
+                            const clickHandler = (t.key === 'sale' || t.key === 'purchase') 
+                                ? `onclick="showTransactionDetails('${t.id}', '${t.key}')"` 
+                                : '';
+                            return `<tr style="cursor: ${t.key === 'sale' || t.key === 'purchase' ? 'pointer' : 'default'}" ${clickHandler}>
+                                <td>${getDate(t)}</td>
                                 <td style="color: ${typeColor}; font-weight: 600">${typeLabel}</td>
-                                <td>${details}</td>
+                                <td>${partyName}</td>
+                                <td>${count}</td>
                                 <td>₹${amount.toFixed(2)}</td>
                             </tr>`;
                         }).join('')}
@@ -264,6 +309,31 @@ async function renderSales(container) {
     const inventory = await getCollection('inventory');
     
     window.salesItems = [];
+    
+    // Group sales by customerId + date for grouped view
+    const groupedSales = {};
+    const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+    
+    sales.forEach(s => {
+        const dateStr = new Date(s.date || s.createdAt).toLocaleDateString();
+        const key = `${s.customerId}-${dateStr}`;
+        if (!groupedSales[key]) {
+            groupedSales[key] = { 
+                ...s, 
+                count: 1, 
+                dateStr, 
+                customerId: s.customerId,
+                total: s.total || 0
+            };
+        } else {
+            groupedSales[key].total += (s.total || 0);
+            groupedSales[key].count += 1;
+        }
+    });
+    
+    const sortedGrouped = Object.values(groupedSales).sort((a, b) => 
+        new Date(b.dateStr) - new Date(a.dateStr)
+    );
     
     container.innerHTML = `
         <div class="card">
@@ -289,6 +359,19 @@ async function renderSales(container) {
                 </div>
                 <button type="submit">Add Sale</button>
             </form>
+        </div>
+        <div class="card">
+            <h2>Sales Summary (Grouped by Party & Date)</h2>
+            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:1rem;">
+                ${sortedGrouped.slice(0, 10).map(g => `
+                    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--bg); cursor: pointer;" onclick="showTransactionDetails('${g.id}', 'sale')">
+                        <div style="font-weight: 600; color: var(--primary); margin-bottom: 0.5rem;">${customerMap[g.customerId] || 'Unknown'}</div>
+                        <div style="font-size: 0.9rem; color: var(--text-alt); margin-bottom: 0.5rem;">${g.dateStr}</div>
+                        <div style="font-size: 1.1rem; color: var(--success); font-weight: 600;">₹${g.total.toFixed(2)}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-alt); margin-top: 0.5rem;">${g.count} transaction(s)</div>
+                    </div>
+                `).join('')}
+            </div>
         </div>
         <div class="card">
             <h2>Sales History</h2>
@@ -454,7 +537,7 @@ async function handleSaleSubmit(e) {
         saleItemsData.push({ productId, quantity: qty, unitPrice: price });
     }
     
-    // Add sale document
+    // Add sale as a single grouped transaction document (one entry per customer/transaction)
     const sale = {
         customerId,
         items: saleItemsData,
@@ -462,24 +545,15 @@ async function handleSaleSubmit(e) {
         date: new Date().toISOString(),
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    
-    // For backward compatibility, also add as individual sales for existing list view
+
+    // Save grouped sale
+    await addDocument('sales', sale);
+
+    // Update inventory quantities per item
     for (const itemData of saleItemsData) {
-        const singleSale = {
-            customerId,
-            productId: itemData.productId,
-            quantity: itemData.quantity,
-            unitPrice: itemData.unitPrice,
-            total: itemData.quantity * itemData.unitPrice,
-            date: new Date().toISOString(),
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        };
-        await addDocument('sales', singleSale);
-        
-        // Update inventory (still update but don't check stock)
         const product = await getDocument('inventory', itemData.productId);
         if (product) {
-            await updateDocument('inventory', itemData.productId, { quantity: product.quantity - itemData.quantity });
+            await updateDocument('inventory', itemData.productId, { quantity: (product.quantity || 0) - itemData.quantity });
         }
     }
     
@@ -493,19 +567,29 @@ async function renderSalesList(sales, search = '') {
         !search || (customerMap[s.customerId] || '').toLowerCase().includes(search.toLowerCase())
     );
     document.getElementById('sales-list').innerHTML = `
+        <div class="actions" style="justify-content: space-between; align-items: center;">
+            <div>
+                <button class="secondary" onclick="toggleSelectAll('sales', this)">Select All</button>
+                <button class="btn-danger" onclick="deleteSelected('sales')">Delete Selected</button>
+            </div>
+            <div>
+                <span style="color:var(--text-alt);">${filtered.length} records</span>
+            </div>
+        </div>
         <table>
             <thead>
-                <tr><th>Date</th><th>Customer</th><th>Total</th><th>Actions</th></tr>
+                <tr><th style="width:40px"> </th><th>Date</th><th>Customer</th><th>Total</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 ${filtered.map(s => `
-                    <tr>
+                    <tr class="${Array.isArray(s.items) ? 'grouped-transaction' : ''}" onclick="showTransactionDetails('${s.id}', 'sale')" style="cursor:pointer;">
+                        <td><input type="checkbox" class="select-checkbox sales-select" data-id="${s.id}" onclick="event.stopPropagation()"></td>
                         <td>${new Date(s.date).toLocaleDateString()}</td>
                         <td>${customerMap[s.customerId] || 'Unknown'}</td>
-                        <td>₹${s.total.toFixed(2)}</td>
+                        <td>₹${(s.total || 0).toFixed(2)}</td>
                         <td class="actions">
-                            <button class="btn-sm secondary" onclick="generateQR('sale', '${s.id}')">QR</button>
-                            <button class="btn-sm btn-danger" onclick="deleteItem('sales', '${s.id}')">Delete</button>
+                            <button class="btn-sm secondary" onclick="event.stopPropagation(); generateQR('sale', '${s.id}')">QR</button>
+                            <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteItem('sales', '${s.id}')">Delete</button>
                         </td>
                     </tr>
                 `).join('')}
@@ -518,6 +602,31 @@ async function renderPurchases(container) {
     const purchases = await getCollection('purchases');
     const suppliers = await getCollection('suppliers');
     const inventory = await getCollection('inventory');
+    
+    // Group purchases by supplierId + date for grouped view
+    const groupedPurchases = {};
+    const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
+    
+    purchases.forEach(p => {
+        const dateStr = new Date(p.date || p.createdAt).toLocaleDateString();
+        const key = `${p.supplierId}-${dateStr}`;
+        if (!groupedPurchases[key]) {
+            groupedPurchases[key] = { 
+                ...p, 
+                count: 1, 
+                dateStr, 
+                supplierId: p.supplierId,
+                total: p.total || 0
+            };
+        } else {
+            groupedPurchases[key].total += (p.total || 0);
+            groupedPurchases[key].count += 1;
+        }
+    });
+    
+    const sortedGrouped = Object.values(groupedPurchases).sort((a, b) => 
+        new Date(b.dateStr) - new Date(a.dateStr)
+    );
     
     container.innerHTML = `
         <div class="card">
@@ -543,6 +652,19 @@ async function renderPurchases(container) {
                 </div>
                 <button type="submit">Add Purchase</button>
             </form>
+        </div>
+        <div class="card">
+            <h2>Purchases Summary (Grouped by Supplier & Date)</h2>
+            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:1rem;">
+                ${sortedGrouped.slice(0, 10).map(g => `
+                    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--bg); cursor: pointer;" onclick="showTransactionDetails('${g.id}', 'purchase')">
+                        <div style="font-weight: 600; color: var(--primary); margin-bottom: 0.5rem;">${supplierMap[g.supplierId] || 'Unknown'}</div>
+                        <div style="font-size: 0.9rem; color: var(--text-alt); margin-bottom: 0.5rem;">${g.dateStr}</div>
+                        <div style="font-size: 1.1rem; color: var(--primary); font-weight: 600;">₹${g.total.toFixed(2)}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-alt); margin-top: 0.5rem;">${g.count} transaction(s)</div>
+                    </div>
+                `).join('')}
+            </div>
         </div>
         <div class="card">
             <h2>Purchase History</h2>
@@ -706,26 +828,24 @@ async function handlePurchaseSubmit(e) {
         purchaseItemsData.push({ productId, quantity: qty, unitCost: cost });
     }
     
-    // For backward compatibility, also add as individual purchases for existing list view
+    // Save grouped purchase transaction
+    const purchase = {
+        supplierId,
+        items: purchaseItemsData,
+        total: totalAmount,
+        date: new Date().toISOString(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await addDocument('purchases', purchase);
+
+    // Update inventory quantities per item
     for (const itemData of purchaseItemsData) {
-        const singlePurchase = {
-            supplierId,
-            productId: itemData.productId,
-            quantity: itemData.quantity,
-            unitCost: itemData.unitCost,
-            total: itemData.quantity * itemData.unitCost,
-            date: new Date().toISOString(),
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        };
-        await addDocument('purchases', singlePurchase);
-        
-        // Update inventory
         const product = await getDocument('inventory', itemData.productId);
         if (product) {
-            await updateDocument('inventory', itemData.productId, { quantity: product.quantity + itemData.quantity });
+            await updateDocument('inventory', itemData.productId, { quantity: (product.quantity || 0) + itemData.quantity });
         }
     }
-    
+
     renderPurchases(document.getElementById('content'));
 }
 
@@ -736,18 +856,28 @@ async function renderPurchasesList(purchases, search = '') {
         !search || (supplierMap[p.supplierId] || '').toLowerCase().includes(search.toLowerCase())
     );
     document.getElementById('purchases-list').innerHTML = `
+        <div class="actions" style="justify-content: space-between; align-items: center;">
+            <div>
+                <button class="secondary" onclick="toggleSelectAll('purchases', this)">Select All</button>
+                <button class="btn-danger" onclick="deleteSelected('purchases')">Delete Selected</button>
+            </div>
+            <div>
+                <span style="color:var(--text-alt);">${filtered.length} records</span>
+            </div>
+        </div>
         <table>
             <thead>
-                <tr><th>Date</th><th>Supplier</th><th>Total</th><th>Actions</th></tr>
+                <tr><th style="width:40px"> </th><th>Date</th><th>Supplier</th><th>Total</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 ${filtered.map(p => `
-                    <tr>
+                    <tr class="${Array.isArray(p.items) ? 'grouped-transaction' : ''}" onclick="showTransactionDetails('${p.id}', 'purchase')" style="cursor:pointer;">
+                        <td><input type="checkbox" class="select-checkbox purchases-select" data-id="${p.id}" onclick="event.stopPropagation()"></td>
                         <td>${new Date(p.date).toLocaleDateString()}</td>
                         <td>${supplierMap[p.supplierId] || 'Unknown'}</td>
-                        <td>₹${p.total.toFixed(2)}</td>
+                        <td>₹${(p.total || 0).toFixed(2)}</td>
                         <td class="actions">
-                            <button class="btn-sm btn-danger" onclick="deleteItem('purchases', '${p.id}')">Delete</button>
+                            <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteItem('purchases', '${p.id}')">Delete</button>
                         </td>
                     </tr>
                 `).join('')}
@@ -1363,6 +1493,560 @@ async function renderReports(container) {
     `;
 }
 
+// CALENDAR VIEW
+async function renderCalendar(container) {
+    const sales = await getCollection('sales');
+    const purchases = await getCollection('purchases');
+    
+    // Group transactions by date
+    const dateMap = {};
+    
+    sales.forEach(s => {
+        const dateStr = new Date(s.date || s.createdAt).toLocaleDateString();
+        if (!dateMap[dateStr]) {
+            dateMap[dateStr] = { sales: 0, purchases: 0, date: new Date(s.date || s.createdAt) };
+        }
+        dateMap[dateStr].sales += (s.total || 0);
+    });
+    
+    purchases.forEach(p => {
+        const dateStr = new Date(p.date || p.createdAt).toLocaleDateString();
+        if (!dateMap[dateStr]) {
+            dateMap[dateStr] = { sales: 0, purchases: 0, date: new Date(p.date || p.createdAt) };
+        }
+        dateMap[dateStr].purchases += (p.total || 0);
+    });
+    
+    const sortedDates = Object.entries(dateMap).sort((a, b) => b[1].date - a[1].date);
+    
+    container.innerHTML = `
+        <div class="card">
+            <h2>Calendar - Daily Summary</h2>
+            <div class="calendar-grid">
+                ${sortedDates.map(([dateStr, data]) => `
+                    <div class="calendar-tile">
+                        <div class="date">${dateStr}</div>
+                        <div class="stat-line">
+                            <span class="label">Sales:</span>
+                            <span class="value sales">₹${data.sales.toFixed(2)}</span>
+                        </div>
+                        <div class="stat-line">
+                            <span class="label">Purchases:</span>
+                            <span class="value purchase">₹${data.purchases.toFixed(2)}</span>
+                        </div>
+                        <div class="stat-line">
+                            <span class="label">Profit:</span>
+                            <span class="value profit">₹${(data.sales - data.purchases).toFixed(2)}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// STATEMENT VIEW WITH FILTERS AND DATE RANGE
+async function renderStatement(container) {
+    const sales = await getCollection('sales');
+    const purchases = await getCollection('purchases');
+    const expenses = await getCollection('expenses');
+    const customers = await getCollection('customers');
+    const suppliers = await getCollection('suppliers');
+    const inventory = await getCollection('inventory');
+    
+    const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+    const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
+    const inventoryMap = Object.fromEntries(inventory.map(i => [i.id, i.name]));
+    
+    container.innerHTML = `
+        <div class="card">
+            <h2>Statement</h2>
+            <div class="filter-section">
+                <div class="form-group" style="display:inline-block; width: 30%; margin-right:1rem;">
+                    <label>From Date</label>
+                    <input type="date" id="stmt-from-date" />
+                </div>
+                <div class="form-group" style="display:inline-block; width: 30%; margin-right:1rem;">
+                    <label>To Date</label>
+                    <input type="date" id="stmt-to-date" />
+                </div>
+                <button class="secondary" style="margin-top:1.5rem;" onclick="renderStatementFiltered()">Apply Date Range</button>
+                <button class="secondary" style="margin-top:1.5rem;" onclick="printStatement()">Print Statement</button>
+            </div>
+            
+            <div style="margin-top:1rem;">
+                <h3>Filter By</h3>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                            <label style="font-weight:600;">Type</label>
+                            <div style="display:flex; gap:0.3rem;">
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('input[name=filter-type]', true)">All</button>
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('input[name=filter-type]', false)">None</button>
+                            </div>
+                        </div>
+                        <label><input type="checkbox" name="filter-type" value="sales" checked /> Sales</label><br>
+                        <label><input type="checkbox" name="filter-type" value="purchases" checked /> Purchases</label><br>
+                        <label><input type="checkbox" name="filter-type" value="expenses" checked /> Expenses</label>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                            <label style="font-weight:600;">Customers</label>
+                            <div style="display:flex; gap:0.3rem;">
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-customer', true)">All</button>
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-customer', false)">None</button>
+                            </div>
+                        </div>
+                        <div style="max-height: 200px; overflow-y:auto;">
+                            ${customers.map(c => `
+                                <label><input type="checkbox" class="filter-customer" value="${c.id}" checked /> ${c.name}</label><br>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                            <label style="font-weight:600;">Suppliers</label>
+                            <div style="display:flex; gap:0.3rem;">
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-supplier', true)">All</button>
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-supplier', false)">None</button>
+                            </div>
+                        </div>
+                        <div style="max-height: 200px; overflow-y:auto;">
+                            ${suppliers.map(s => `
+                                <label><input type="checkbox" class="filter-supplier" value="${s.id}" checked /> ${s.name}</label><br>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                            <label style="font-weight:600;">Items</label>
+                            <div style="display:flex; gap:0.3rem;">
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-item', true)">All</button>
+                                <button class="btn-sm secondary" onclick="toggleFilterCheckboxes('.filter-item', false)">None</button>
+                            </div>
+                        </div>
+                        <div style="max-height: 200px; overflow-y:auto;">
+                            ${inventory.map(i => `
+                                <label><input type="checkbox" class="filter-item" value="${i.id}" checked /> ${i.name}</label><br>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                <button class="secondary" style="margin-top:1rem;" onclick="renderStatementFiltered()">Apply Filters</button>
+            </div>
+            
+            <div id="statement-content" style="margin-top:2rem;"></div>
+        </div>
+    `;
+    
+    // Store data for filtering
+    window.statementData = {
+        sales, purchases, expenses, customers, suppliers, inventory,
+        customerMap, supplierMap, inventoryMap
+    };
+    
+    renderStatementContent();
+}
+
+function renderStatementContent() {
+    const { sales, purchases, expenses, customerMap, supplierMap, inventoryMap } = window.statementData || {};
+    if (!sales) return;
+    
+    const fromDate = new Date(document.getElementById('stmt-from-date')?.value || '1900-01-01');
+    const toDate = new Date(document.getElementById('stmt-to-date')?.value || '2100-12-31');
+    
+    const filterTypes = Array.from(document.querySelectorAll('input[name="filter-type"]:checked')).map(cb => cb.value);
+    const filterCustomers = Array.from(document.querySelectorAll('.filter-customer:checked')).map(cb => cb.value);
+    const filterSuppliers = Array.from(document.querySelectorAll('.filter-supplier:checked')).map(cb => cb.value);
+    const filterItems = Array.from(document.querySelectorAll('.filter-item:checked')).map(cb => cb.value);
+    
+    let transactions = [];
+    
+    if (filterTypes.includes('sales')) {
+        transactions.push(...sales.map(s => ({
+            ...s,
+            type: 'sale',
+            dateObj: new Date(s.date || s.createdAt),
+            partyName: customerMap[s.customerId] || 'Unknown'
+        })));
+    }
+    
+    if (filterTypes.includes('purchases')) {
+        transactions.push(...purchases.map(p => ({
+            ...p,
+            type: 'purchase',
+            dateObj: new Date(p.date || p.createdAt),
+            partyName: supplierMap[p.supplierId] || 'Unknown'
+        })));
+    }
+    
+    if (filterTypes.includes('expenses')) {
+        transactions.push(...expenses.map(e => ({
+            ...e,
+            type: 'expense',
+            dateObj: new Date(e.date || e.createdAt)
+        })));
+    }
+    
+    // Filter by date
+    transactions = transactions.filter(t => t.dateObj >= fromDate && t.dateObj <= toDate);
+    
+    // Filter by party and items
+    transactions = transactions.filter(t => {
+        if (t.type === 'sale' && !filterCustomers.includes(t.customerId)) return false;
+        if (t.type === 'purchase' && !filterSuppliers.includes(t.supplierId)) return false;
+        
+        // Support both new grouped format and legacy single-item format
+        if (Array.isArray(t.items) && t.items.length > 0) {
+            return t.items.some(it => filterItems.includes(it.productId));
+        } else if (t.productId && filterItems.length > 0) {
+            return filterItems.includes(t.productId);
+        }
+        return true;
+    });
+    
+    transactions.sort((a, b) => b.dateObj - a.dateObj);
+    
+    const totalSales = transactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + (t.total || 0), 0);
+    const totalPurchases = transactions.filter(t => t.type === 'purchase').reduce((sum, t) => sum + (t.total || 0), 0);
+    const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    let html = `
+        <div class="statement-summary">
+            <div class="sum-item"><strong>Total Sales:</strong> ₹${totalSales.toFixed(2)}</div>
+            <div class="sum-item"><strong>Total Purchases:</strong> ₹${totalPurchases.toFixed(2)}</div>
+            <div class="sum-item"><strong>Total Expenses:</strong> ₹${totalExpenses.toFixed(2)}</div>
+            <div class="sum-item"><strong>Net Profit:</strong> ₹${(totalSales - totalPurchases - totalExpenses).toFixed(2)}</div>
+        </div>
+        <table style="width:100%; margin-top:1.5rem;">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Party</th>
+                    <th>Details</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    transactions.forEach(t => {
+        const dateStr = t.dateObj.toLocaleDateString();
+        let details = '', amount = 0, typeLabel = '', typeColor = '';
+        
+        if (t.type === 'sale') {
+            // Support both new grouped format and legacy single-item format
+            if (Array.isArray(t.items) && t.items.length > 0) {
+                details = t.items.map(it => inventoryMap[it.productId] || 'Unknown').join(', ');
+            } else if (t.productId) {
+                details = inventoryMap[t.productId] || 'Unknown';
+            }
+            amount = t.total || 0;
+            typeLabel = 'Sale';
+            typeColor = 'var(--success)';
+        } else if (t.type === 'purchase') {
+            // Support both new grouped format and legacy single-item format
+            if (Array.isArray(t.items) && t.items.length > 0) {
+                details = t.items.map(it => inventoryMap[it.productId] || 'Unknown').join(', ');
+            } else if (t.productId) {
+                details = inventoryMap[t.productId] || 'Unknown';
+            }
+            amount = t.total || 0;
+            typeLabel = 'Purchase';
+            typeColor = 'var(--primary)';
+        } else {
+            details = t.description || '-';
+            amount = t.amount;
+            typeLabel = 'Expense';
+            typeColor = 'var(--danger)';
+        }
+        
+        html += `
+            <tr>
+                <td>${dateStr}</td>
+                <td style="color: ${typeColor}; font-weight: 600;">${typeLabel}</td>
+                <td>${t.partyName || t.category || '-'}</td>
+                <td>${details}</td>
+                <td>₹${amount.toFixed(2)}</td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table>';
+    
+    document.getElementById('statement-content').innerHTML = html;
+}
+
+function renderStatementFiltered() {
+    renderStatementContent();
+}
+
+function printStatement() {
+    const printWindow = window.open('', '_blank');
+    const content = document.getElementById('statement-content').innerHTML;
+    const summary = document.querySelector('.statement-summary').innerHTML;
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Statement</title>
+            <style>
+                body { font-family: Arial; margin: 2cm; }
+                h1 { text-align: center; }
+                .statement-summary { margin: 1rem 0; border: 1px solid #ddd; padding: 1rem; }
+                .sum-item { margin: 0.5rem 0; }
+                table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+                th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+                th { background: #f0f0f0; }
+                @media print { body { margin: 0; } }
+            </style>
+        </head>
+        <body>
+            <h1>Statement</h1>
+            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <div class="statement-summary">${summary}</div>
+            ${content}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+// TRANSACTION DETAIL VIEW
+async function showTransactionDetails(transactionId, type) {
+    const doc = await getDocument(type === 'sale' ? 'sales' : 'purchases', transactionId);
+    if (!doc) return;
+    
+    const inventory = await getCollection('inventory');
+    const inventoryMap = Object.fromEntries(inventory.map(i => [i.id, i.name]));
+    
+    const customers = await getCollection('customers');
+    const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+    
+    const suppliers = await getCollection('suppliers');
+    const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'transaction-detail-modal';
+    modal.style.cssText = 'display:flex; align-items:center; justify-content:center; z-index:1000;';
+    
+    let partyName = '';
+    if (type === 'sale') {
+        partyName = customerMap[doc.customerId] || 'Unknown';
+    } else {
+        partyName = supplierMap[doc.supplierId] || 'Unknown';
+    }
+    
+    const dateStr = new Date(doc.date || doc.createdAt).toLocaleDateString();
+    
+    let itemsHtml = '';
+    // Support both new grouped format (items array) and legacy single-item format
+    let items = [];
+    
+    if (Array.isArray(doc.items) && doc.items.length > 0) {
+        // New grouped format
+        items = doc.items;
+    } else if (doc.productId) {
+        // Legacy single-item format - convert to items array format
+        items = [{
+            productId: doc.productId,
+            quantity: doc.quantity || 1,
+            unitPrice: doc.unitPrice || doc.unitCost || 0
+        }];
+    }
+    
+    if (items.length > 0) {
+        itemsHtml = `
+            <div style="margin-top:1rem; padding:1rem; background:var(--bg); border-radius:8px; max-height: 400px; overflow-y: auto;">
+                <h4 style="margin-bottom:1rem; position: sticky; top: 0; background: var(--bg); padding-bottom: 0.5rem;">Items Details (${items.length}):</h4>
+                <div style="display:grid; gap:0.75rem;">
+                    ${items.map(it => {
+                        const itemName = inventoryMap[it.productId] || 'Unknown';
+                        const unitPrice = it.unitPrice || it.unitCost || 0;
+                        const itemTotal = (it.quantity || 0) * unitPrice;
+                        return `
+                            <div style="padding:0.75rem; background:var(--bg-alt); border-left: 3px solid var(--primary); border-radius: 4px;">
+                                <div style="font-weight: 600; color: var(--primary); margin-bottom: 0.3rem;">${itemName}</div>
+                                <div style="font-size: 0.95rem; color: var(--text);">
+                                    ${it.quantity} × ₹${unitPrice.toFixed(2)} = <strong>₹${itemTotal.toFixed(2)}</strong>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px; max-height:90vh; overflow:auto;">
+            <h3>${type === 'sale' ? 'Sale' : 'Purchase'} Details</h3>
+            <div style="margin: 1rem 0; padding: 1rem; background: var(--bg); border-radius: 8px;">
+                <p><strong>Date:</strong> ${dateStr}</p>
+                <p><strong>Party:</strong> ${partyName}</p>
+                <p style="font-size: 1.2rem; color: var(--primary); margin: 0; font-weight: 600;"><strong>Total Amount:</strong> ₹${(doc.total || 0).toFixed(2)}</p>
+            </div>
+            ${itemsHtml}
+            <div class="modal-actions" style="margin-top:1rem;">
+                <button class="secondary" onclick="document.getElementById('transaction-detail-modal').remove()">Close</button>
+                <button onclick="editGroupedTransaction('${doc.id}', '${type}')">Edit</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// EDIT GROUPED TRANSACTION
+async function editGroupedTransaction(transactionId, type) {
+    const doc = await getDocument(type === 'sale' ? 'sales' : 'purchases', transactionId);
+    if (!doc) return;
+    
+    const inventory = await getCollection('inventory');
+    const customers = type === 'sale' ? await getCollection('customers') : [];
+    const suppliers = type === 'purchase' ? await getCollection('suppliers') : [];
+    
+    // Close detail modal first
+    const detailModal = document.getElementById('transaction-detail-modal');
+    if (detailModal) detailModal.remove();
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'edit-transaction-modal';
+    
+    let customerSelect = '';
+    if (type === 'sale') {
+        customerSelect = `
+            <div class="form-group">
+                <label>Customer</label>
+                <select id="edit-customer" required>
+                    ${customers.map(c => `<option value="${c.id}" ${c.id === doc.customerId ? 'selected' : ''}>${c.name}</option>`).join('')}
+                </select>
+            </div>
+        `;
+    }
+    
+    let supplierSelect = '';
+    if (type === 'purchase') {
+        supplierSelect = `
+            <div class="form-group">
+                <label>Supplier</label>
+                <select id="edit-supplier" required>
+                    ${suppliers.map(s => `<option value="${s.id}" ${s.id === doc.supplierId ? 'selected' : ''}>${s.name}</option>`).join('')}
+                </select>
+            </div>
+        `;
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px; max-height:90vh; overflow:auto;">
+            <h3>Edit ${type === 'sale' ? 'Sale' : 'Purchase'}</h3>
+            <form id="edit-transaction-form">
+                ${customerSelect}
+                ${supplierSelect}
+                <div id="edit-items-list"></div>
+                <div class="form-group">
+                    <label>Total Amount</label>
+                    <input type="text" id="edit-total" readonly value="₹${(doc.total || 0).toFixed(2)}" style="background: var(--bg-alt);">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="secondary" onclick="document.getElementById('edit-transaction-modal').remove()">Cancel</button>
+                    <button type="submit">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Support both new grouped format (items array) and legacy single-item format
+    let itemsToEdit = [];
+    if (Array.isArray(doc.items) && doc.items.length > 0) {
+        itemsToEdit = doc.items;
+    } else if (doc.productId) {
+        // Legacy single-item format - convert to items array format
+        itemsToEdit = [{
+            productId: doc.productId,
+            quantity: doc.quantity || 1,
+            unitPrice: doc.unitPrice || doc.unitCost || 0
+        }];
+    }
+    
+    const itemsList = document.getElementById('edit-items-list');
+    itemsToEdit.forEach((item, idx) => {
+        const product = inventory.find(p => p.id === item.productId);
+        itemsList.innerHTML += `
+            <div style="border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label>Product</label>
+                    <input type="text" value="${product?.name || 'Unknown'}" readonly style="background: var(--bg-alt);">
+                </div>
+                <div class="form-group">
+                    <label>Quantity</label>
+                    <input type="number" class="edit-item-qty" value="${item.quantity}" min="1" onchange="updateEditTotal('${type}')">
+                </div>
+                <div class="form-group">
+                    <label>Unit Price</label>
+                    <input type="number" class="edit-item-price" step="0.01" value="${(item.unitPrice || item.unitCost || 0).toFixed(2)}" onchange="updateEditTotal('${type}')">
+                </div>
+            </div>
+        `;
+    });
+    
+    document.getElementById('edit-transaction-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!(await checkPasscodeRequired())) return;
+        
+        const newItems = [];
+        const qtyInputs = document.querySelectorAll('.edit-item-qty');
+        const priceInputs = document.querySelectorAll('.edit-item-price');
+        
+        itemsToEdit.forEach((item, idx) => {
+            newItems.push({
+                productId: item.productId,
+                quantity: parseInt(qtyInputs[idx].value),
+                unitPrice: parseFloat(priceInputs[idx].value) || item.unitPrice,
+                unitCost: parseFloat(priceInputs[idx].value) || item.unitCost
+            });
+        });
+        
+        const newTotal = newItems.reduce((sum, item) => sum + (item.quantity * (item.unitPrice || item.unitCost || 0)), 0);
+        
+        const updates = {
+            items: newItems,
+            total: newTotal
+        };
+        
+        if (type === 'sale') {
+            updates.customerId = document.getElementById('edit-customer').value;
+        } else {
+            updates.supplierId = document.getElementById('edit-supplier').value;
+        }
+        
+        await updateDocument(type === 'sale' ? 'sales' : 'purchases', transactionId, updates);
+        modal.remove();
+        renderPage();
+    });
+}
+
+function updateEditTotal(type) {
+    let total = 0;
+    const qtyInputs = document.querySelectorAll('.edit-item-qty');
+    const priceInputs = document.querySelectorAll('.edit-item-price');
+    
+    qtyInputs.forEach((input, idx) => {
+        const qty = parseFloat(input.value) || 0;
+        const price = parseFloat(priceInputs[idx].value) || 0;
+        total += qty * price;
+    });
+    
+    document.getElementById('edit-total').value = `₹${total.toFixed(2)}`;
+}
+
 function renderSettings(container) {
     container.innerHTML = `
         <div class="card">
@@ -1959,4 +2643,40 @@ async function syncToSheets() {
     } catch (err) {
         alert('Sync failed: ' + err.message);
     }
+}
+
+// Multi-select helpers: toggle all checkboxes and delete selected items
+function toggleSelectAll(collection, btn) {
+    const checkboxes = document.querySelectorAll(`.${collection}-select`);
+    // If any unchecked, check all; otherwise uncheck all
+    const anyUnchecked = Array.from(checkboxes).some(cb => !cb.checked);
+    checkboxes.forEach(cb => cb.checked = anyUnchecked);
+    btn.textContent = anyUnchecked ? 'Unselect All' : 'Select All';
+}
+
+async function deleteSelected(collection) {
+    if (!(await checkPasscodeRequired())) return;
+    const checkboxes = document.querySelectorAll(`.${collection}-select:checked`);
+    if (!checkboxes.length) {
+        alert('No items selected');
+        return;
+    }
+    if (!confirm(`Delete ${checkboxes.length} selected items from ${collection}?`)) return;
+    for (const cb of checkboxes) {
+        const id = cb.dataset.id;
+        if (id) {
+            try {
+                await deleteItem(collection, id);
+            } catch (err) {
+                console.error('Error deleting selected item', err);
+            }
+        }
+    }
+    renderPage();
+}
+
+// Toggle filter checkboxes for Statement page (Select All / Deselect All)
+function toggleFilterCheckboxes(selector, checkAll) {
+    const checkboxes = document.querySelectorAll(selector);
+    checkboxes.forEach(cb => cb.checked = checkAll);
 }
