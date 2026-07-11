@@ -597,3 +597,106 @@ th {
     margin-top: 1rem;
     min-height: 1.5rem;
 }
+
+/* ============ MOBILE / iOS / ANDROID PRODUCTION ENHANCEMENTS ============ */
+
+/* Prevent grey flash on tap (iOS/Android) */
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Fix iOS 100vh bug (address bar) using dynamic viewport unit */
+#app {
+    height: 100vh;      /* fallback */
+    height: 100dvh;     /* iOS 15.4+ */
+}
+#login-screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+/* Notch / safe-area padding */
+header {
+    padding-top: max(0.8rem, env(safe-area-inset-top));
+    padding-left: max(1.5rem, env(safe-area-inset-left));
+    padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+#sidebar {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+.modal-content {
+    margin-bottom: env(safe-area-inset-bottom);
+}
+
+/* Enforce 16px on inputs → prevents iOS auto-zoom on focus */
+input, select, textarea {
+    font-size: 16px;
+}
+
+/* Remove native button styling but keep tap targets >= 44px (Apple HIG) */
+button {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 44px;
+}
+.btn-sm { min-height: 36px; }
+
+/* Custom select arrow (since appearance:none removes it) */
+select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1.2rem;
+    padding-right: 2.5rem;
+}
+
+/* Stop pull-to-refresh from breaking in-app scroll */
+body { overscroll-behavior-y: none; }
+main, #nav-menu { overscroll-behavior: contain; }
+
+/* Mobile-specific refinements */
+@media (max-width: 768px) {
+    header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+    }
+    #nav-menu li a {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+    main {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+    /* Rounded bottom-nav feel */
+    #sidebar {
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+    }
+}
+
+/* ============ TOAST NOTIFICATIONS (replace alert()) ============ */
+.toast {
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%) translateY(120px);
+    background: var(--text);
+    color: var(--bg);
+    padding: 0.8rem 1.5rem;
+    border-radius: 10px;
+    z-index: 3000;
+    transition: transform 0.3s ease;
+    max-width: 90%;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast-success { background: var(--success); color: #fff; }
+.toast-error   { background: var(--danger);  color: #fff; }
+.toast-warning { background: var(--warning); color: #fff; }

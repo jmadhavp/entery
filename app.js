@@ -47,6 +47,12 @@ let pendingSync = JSON.parse(localStorage.getItem('pendingSync') || '[]');
 document.addEventListener('DOMContentLoaded', initApp);
 
 function initApp() {
+    // Register PWA service worker
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () =>
+            navigator.serviceWorker.register('sw.js').catch(err => console.log('SW failed:', err))
+        );
+    }
     initTheme();
     initAuth();
     initLoginForm();
@@ -376,7 +382,7 @@ async function renderSales(container) {
         <div class="card">
             <h2>Sales History</h2>
             <div class="search-bar">
-                <input type="text" id="sales-search" placeholder="Search sales...">
+                <input type="search" inputmode="search" id="sales-search" placeholder="Search sales...">
                 <button class="secondary" onclick="exportCSV('sales')">Export CSV</button>
             </div>
             <div id="sales-list"></div>
@@ -426,11 +432,11 @@ function addSaleItem() {
         </div>
         <div class="form-group">
             <label>Quantity</label>
-            <input type="number" class="sale-item-qty" min="1" value="1" onchange="updateSaleTotal()">
+            <input type="number" inputmode="numeric" class="sale-item-qty" min="1" value="1" onchange="updateSaleTotal()">
         </div>
         <div class="form-group">
             <label>Unit Price</label>
-            <input type="number" class="sale-item-price" step="0.01" value="0" onchange="updateSaleTotal()">
+            <input type="number" inputmode="decimal" class="sale-item-price" step="0.01" value="0" onchange="updateSaleTotal()">
         </div>
         <button type="button" class="btn-danger btn-sm" onclick="removeSaleItem(${itemId})">Remove Item</button>
     `;
@@ -516,7 +522,7 @@ async function handleSaleSubmit(e) {
     const items = document.querySelectorAll('.sale-item');
     
     if (items.length === 0) {
-        alert('Please add at least one item');
+        showToast('Please add at least one item', 'error');
         return;
     }
     
@@ -529,7 +535,7 @@ async function handleSaleSubmit(e) {
         const price = parseFloat(item.querySelector('.sale-item-price').value);
         
         if (!productId || qty <= 0 || price <= 0) {
-            alert('Please fill in all item details correctly');
+            showToast('Please fill in all item details correctly', 'error');
             return;
         }
         
@@ -669,7 +675,7 @@ async function renderPurchases(container) {
         <div class="card">
             <h2>Purchase History</h2>
             <div class="search-bar">
-                <input type="text" id="purchases-search" placeholder="Search purchases...">
+                <input type="search" inputmode="search" id="purchases-search" placeholder="Search purchases...">
                 <button class="secondary" onclick="exportCSV('purchases')">Export CSV</button>
             </div>
             <div id="purchases-list"></div>
@@ -719,11 +725,11 @@ function addPurchaseItem() {
         </div>
         <div class="form-group">
             <label>Quantity</label>
-            <input type="number" class="purchase-item-qty" min="1" value="1" onchange="updatePurchaseTotal()">
+            <input type="number" inputmode="numeric" class="purchase-item-qty" min="1" value="1" onchange="updatePurchaseTotal()">
         </div>
         <div class="form-group">
             <label>Unit Cost</label>
-            <input type="number" class="purchase-item-cost" step="0.01" value="0" onchange="updatePurchaseTotal()">
+            <input type="number" inputmode="decimal" class="purchase-item-cost" step="0.01" value="0" onchange="updatePurchaseTotal()">
         </div>
         <button type="button" class="btn-danger btn-sm" onclick="removePurchaseItem(${itemId})">Remove Item</button>
     `;
@@ -807,7 +813,7 @@ async function handlePurchaseSubmit(e) {
     const items = document.querySelectorAll('.purchase-item');
     
     if (items.length === 0) {
-        alert('Please add at least one item');
+        showToast('Please add at least one item', 'error');
         return;
     }
     
@@ -820,7 +826,7 @@ async function handlePurchaseSubmit(e) {
         const cost = parseFloat(item.querySelector('.purchase-item-cost').value);
         
         if (!productId || qty <= 0 || cost <= 0) {
-            alert('Please fill in all item details correctly');
+            showToast('Please fill in all item details correctly', 'error');
             return;
         }
         
@@ -904,15 +910,15 @@ async function renderInventory(container) {
                 </div>
                 <div class="form-group">
                     <label>Quantity</label>
-                    <input type="number" id="inv-qty" min="0" required>
+                    <input type="number" inputmode="numeric" id="inv-qty" min="0" required>
                 </div>
                 <div class="form-group">
                     <label>Cost Price</label>
-                    <input type="number" id="inv-cost" step="0.01" required>
+                    <input type="number" inputmode="decimal" id="inv-cost" step="0.01" required>
                 </div>
                 <div class="form-group">
                     <label>Selling Price</label>
-                    <input type="number" id="inv-price" step="0.01" required>
+                    <input type="number" inputmode="decimal" id="inv-price" step="0.01" required>
                 </div>
                 <button type="submit">Add Product</button>
             </form>
@@ -920,7 +926,7 @@ async function renderInventory(container) {
         <div class="card">
             <h2>Inventory</h2>
             <div class="search-bar">
-                <input type="text" id="inventory-search" placeholder="Search products...">
+                <input type="search" inputmode="search" id="inventory-search" placeholder="Search products...">
                 <button class="secondary" onclick="exportCSV('inventory')">Export CSV</button>
             </div>
             <div id="inventory-list"></div>
@@ -1004,15 +1010,15 @@ async function showEditProductModal(productId) {
                 </div>
                 <div class="form-group">
                     <label>Quantity</label>
-                    <input type="number" id="edit-inv-qty" min="0" required value="${product.quantity}">
+                    <input type="number" inputmode="numeric" id="edit-inv-qty" min="0" required value="${product.quantity}">
                 </div>
                 <div class="form-group">
                     <label>Cost Price</label>
-                    <input type="number" id="edit-inv-cost" step="0.01" required value="${product.costPrice}">
+                    <input type="number" inputmode="decimal" id="edit-inv-cost" step="0.01" required value="${product.costPrice}">
                 </div>
                 <div class="form-group">
                     <label>Selling Price</label>
-                    <input type="number" id="edit-inv-price" step="0.01" required value="${product.sellingPrice}">
+                    <input type="number" inputmode="decimal" id="edit-inv-price" step="0.01" required value="${product.sellingPrice}">
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="secondary" onclick="document.getElementById('edit-product-modal').remove()">Cancel</button>
@@ -1057,7 +1063,7 @@ async function renderCustomers(container) {
                 </div>
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="tel" id="cust-phone">
+                    <input type="tel" inputmode="tel" id="cust-phone">
                 </div>
                 <div class="form-group">
                     <label>Address</label>
@@ -1069,7 +1075,7 @@ async function renderCustomers(container) {
         <div class="card">
             <h2>Customers</h2>
             <div class="search-bar">
-                <input type="text" id="customers-search" placeholder="Search customers...">
+                <input type="search" inputmode="search" id="customers-search" placeholder="Search customers...">
                 <button class="secondary" onclick="exportCSV('customers')">Export CSV</button>
             </div>
             <div id="customers-list"></div>
@@ -1150,7 +1156,7 @@ async function showEditCustomerModal(customerId) {
                 </div>
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="tel" id="edit-cust-phone" value="${customer.phone || ''}">
+                    <input type="tel" inputmode="tel" id="edit-cust-phone" value="${customer.phone || ''}">
                 </div>
                 <div class="form-group">
                     <label>Address</label>
@@ -1198,7 +1204,7 @@ async function renderSuppliers(container) {
                 </div>
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="tel" id="sup-phone">
+                    <input type="tel" inputmode="tel" id="sup-phone">
                 </div>
                 <div class="form-group">
                     <label>Address</label>
@@ -1210,7 +1216,7 @@ async function renderSuppliers(container) {
         <div class="card">
             <h2>Suppliers</h2>
             <div class="search-bar">
-                <input type="text" id="suppliers-search" placeholder="Search suppliers...">
+                <input type="search" inputmode="search" id="suppliers-search" placeholder="Search suppliers...">
                 <button class="secondary" onclick="exportCSV('suppliers')">Export CSV</button>
             </div>
             <div id="suppliers-list"></div>
@@ -1288,7 +1294,7 @@ async function showEditSupplierModal(supplierId) {
                 </div>
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="tel" id="edit-sup-phone" value="${supplier.phone || ''}">
+                    <input type="tel" inputmode="tel" id="edit-sup-phone" value="${supplier.phone || ''}">
                 </div>
                 <div class="form-group">
                     <label>Address</label>
@@ -1342,7 +1348,7 @@ async function renderExpenses(container) {
         <div class="card">
             <h2>Expenses</h2>
             <div class="search-bar">
-                <input type="text" id="expenses-search" placeholder="Search expenses...">
+                <input type="search" inputmode="search" id="expenses-search" placeholder="Search expenses...">
                 <button class="secondary" onclick="exportCSV('expenses')">Export CSV</button>
             </div>
             <div id="expenses-list"></div>
@@ -1369,7 +1375,7 @@ function addExpenseItem() {
             </div>
             <div class="form-group">
                 <label>Amount</label>
-                <input type="number" class="expense-item-amount" step="0.01" min="0.01" value="0" onchange="updateExpenseTotal()">
+                <input type="number" inputmode="decimal" class="expense-item-amount" step="0.01" min="0.01" value="0" onchange="updateExpenseTotal()">
             </div>
             <button type="button" class="btn-danger btn-sm" onclick="removeExpenseItem(${itemId})">Remove Item</button>
         </div>
@@ -1401,7 +1407,7 @@ async function handleExpenseSubmit(e) {
     const items = document.querySelectorAll('.expense-item');
     
     if (items.length === 0) {
-        alert('Please add at least one expense item');
+        showToast('Please add at least one expense item', 'error');
         return;
     }
     
@@ -1411,7 +1417,7 @@ async function handleExpenseSubmit(e) {
         const description = item.querySelector('.expense-item-description').value;
         
         if (!category || amount <= 0) {
-            alert('Please fill in all item details correctly');
+            showToast('Please fill in all item details correctly', 'error');
             return;
         }
         
@@ -1987,11 +1993,11 @@ async function editGroupedTransaction(transactionId, type) {
                 </div>
                 <div class="form-group">
                     <label>Quantity</label>
-                    <input type="number" class="edit-item-qty" value="${item.quantity}" min="1" onchange="updateEditTotal('${type}')">
+                    <input type="number" inputmode="numeric" class="edit-item-qty" value="${item.quantity}" min="1" onchange="updateEditTotal('${type}')">
                 </div>
                 <div class="form-group">
                     <label>Unit Price</label>
-                    <input type="number" class="edit-item-price" step="0.01" value="${(item.unitPrice || item.unitCost || 0).toFixed(2)}" onchange="updateEditTotal('${type}')">
+                    <input type="number" inputmode="decimal" class="edit-item-price" step="0.01" value="${(item.unitPrice || item.unitCost || 0).toFixed(2)}" onchange="updateEditTotal('${type}')">
                 </div>
             </div>
         `;
@@ -2187,7 +2193,7 @@ async function initPasscodeSettings() {
             <p>No passcode set</p>
             <div class="form-group">
                 <label>Set New 4-Digit Passcode</label>
-                <input type="password" id="new-passcode" maxlength="4" placeholder="____" />
+                <input type="password" id="new-passcode" inputmode="numeric" maxlength="4" placeholder="____" />
                 <button class="secondary" onclick="setNewPasscode()">Set Passcode</button>
             </div>
         `;
@@ -2201,15 +2207,15 @@ async function initPasscodeSettings() {
             <div id="change-passcode-form" class="hidden">
                 <div class="form-group">
                     <label>Enter Old Passcode</label>
-                    <input type="password" id="old-passcode-input" maxlength="4" placeholder="____" />
+                    <input type="password" id="old-passcode-input" inputmode="numeric" maxlength="4" placeholder="____" />
                 </div>
                 <div class="form-group">
                     <label>Enter New 4-Digit Passcode</label>
-                    <input type="password" id="change-passcode-input" maxlength="4" placeholder="____" />
+                    <input type="password" id="change-passcode-input" inputmode="numeric" maxlength="4" placeholder="____" />
                 </div>
                 <div class="form-group">
                     <label>Confirm New Passcode</label>
-                    <input type="password" id="confirm-passcode-input" maxlength="4" placeholder="____" />
+                    <input type="password" id="confirm-passcode-input" inputmode="numeric" maxlength="4" placeholder="____" />
                 </div>
                 <button class="secondary" onclick="saveNewPasscode()">Save</button>
                 <button class="secondary" onclick="hideChangePasscodeForm()">Cancel</button>
@@ -2218,7 +2224,7 @@ async function initPasscodeSettings() {
             <div id="remove-passcode-form" class="hidden">
                 <div class="form-group">
                     <label>Enter Old Passcode to Remove</label>
-                    <input type="password" id="remove-passcode-input" maxlength="4" placeholder="____" />
+                    <input type="password" id="remove-passcode-input" inputmode="numeric" maxlength="4" placeholder="____" />
                 </div>
                 <button class="btn-danger" onclick="confirmRemovePasscode()">Remove Passcode</button>
                 <button class="secondary" onclick="hideRemovePasscodeForm()">Cancel</button>
@@ -2232,16 +2238,16 @@ async function setNewPasscode() {
     const input = document.getElementById('new-passcode');
     const code = input.value.trim();
     if (code.length !== 4 || !/^\d{4}$/.test(code)) {
-        alert('Please enter a valid 4-digit passcode');
+        showToast('Please enter a valid 4-digit passcode', 'error');
         return;
     }
     try {
         await setPasscode(code);
-        alert('Passcode set successfully');
+        showToast('Passcode set successfully', 'success');
         input.value = '';
         initPasscodeSettings();
     } catch (err) {
-        alert('Error setting passcode: ' + err.message);
+        showToast('Error setting passcode: ' + err.message, 'error');
     }
 }
 
@@ -2300,7 +2306,7 @@ async function saveNewPasscode() {
     
     try {
         await setPasscode(newCode);
-        alert('Passcode changed successfully');
+        showToast('Passcode changed successfully', 'success');
         hideChangePasscodeForm();
         initPasscodeSettings();
     } catch (err) {
@@ -2325,7 +2331,7 @@ async function confirmRemovePasscode() {
     
     try {
         await removePasscode();
-        alert('Passcode removed successfully');
+        showToast('Passcode removed successfully', 'success');
         hideRemovePasscodeForm();
         initPasscodeSettings();
     } catch (err) {
@@ -2409,14 +2415,14 @@ async function addDocument(collection, data) {
     if (isOffline) {
         pendingSync.push({ collection, data, action: 'add' });
         localStorage.setItem('pendingSync', JSON.stringify(pendingSync));
-        alert('Saved offline - will sync when online');
+        showToast('Saved offline — will sync when online', 'warning');
         return;
     }
     try {
         await db.collection(collection).add(data);
     } catch (err) {
         console.error('Error adding document:', err);
-        alert('Error: ' + err.message);
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -2560,7 +2566,7 @@ async function showLinkProductModal(productId) {
                             <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem;">
                                 <input type="checkbox" id="customer-${customer.id}" ${existingLink ? 'checked' : ''} style="width: auto;">
                                 <label style="flex: 1; margin: 0;" for="customer-${customer.id}">${customer.name}</label>
-                                <input type="number" id="customer-price-${customer.id}" step="0.01" value="${existingLink ? existingLink.price : product.sellingPrice}" style="width: 120px;">
+                                <input type="number" inputmode="decimal" id="customer-price-${customer.id}" step="0.01" value="${existingLink ? existingLink.price : product.sellingPrice}" style="width: 120px;">
                             </div>
                         `;
                     }).join('')}
@@ -2619,7 +2625,7 @@ async function saveProductLinks(productId) {
 async function syncToSheets() {
     const sheetsUrl = localStorage.getItem('sheetsUrl');
     if (!sheetsUrl) {
-        alert('Please set Google Sheets webhook URL in Settings first');
+        showToast('Please set Google Sheets webhook URL in Settings first', 'warning');
         return;
     }
     const [sales, purchases, expenses, inventory, customers, suppliers] = await Promise.all([
@@ -2639,9 +2645,9 @@ async function syncToSheets() {
                 sales, purchases, expenses, inventory, customers, suppliers
             })
         });
-        alert('Synced to Google Sheets successfully!');
+        showToast('Synced to Google Sheets successfully!', 'success');
     } catch (err) {
-        alert('Sync failed: ' + err.message);
+        showToast('Sync failed: ' + err.message, 'error');
     }
 }
 
@@ -2658,7 +2664,7 @@ async function deleteSelected(collection) {
     if (!(await checkPasscodeRequired())) return;
     const checkboxes = document.querySelectorAll(`.${collection}-select:checked`);
     if (!checkboxes.length) {
-        alert('No items selected');
+        showToast('No items selected', 'warning');
         return;
     }
     if (!confirm(`Delete ${checkboxes.length} selected items from ${collection}?`)) return;
@@ -2679,4 +2685,17 @@ async function deleteSelected(collection) {
 function toggleFilterCheckboxes(selector, checkAll) {
     const checkboxes = document.querySelectorAll(selector);
     checkboxes.forEach(cb => cb.checked = checkAll);
+}
+
+// ============ TOAST NOTIFICATION HELPER ============
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }

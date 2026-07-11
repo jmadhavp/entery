@@ -1,0 +1,11 @@
+{
+  "name": "Daily Inventory",
+  "short_name": "Inventory",
+  "description": "Small Business Management App",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#4f46e5"
+}

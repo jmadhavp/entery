@@ -2,8 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- viewport-fit=cover enables safe-area-inset on notched phones -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Daily Inventory - Small Business Management</title>
+
+    <!-- Theme color (changes browser chrome / status bar) -->
+    <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#818cf8" media="(prefers-color-scheme: dark)">
+
+    <!-- Stop iOS auto-linking numbers as phones -->
+    <meta name="format-detection" content="telephone=no">
+
+    <!-- iOS standalone mode -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Daily Inventory">
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+
     <link rel="stylesheet" href="style.css">
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -48,7 +65,7 @@
     <div id="passcode-modal" class="modal hidden">
         <div class="modal-content">
             <h3>Enter Passcode</h3>
-            <input type="password" id="passcode-input" maxlength="4" placeholder="____" />
+            <input type="password" id="passcode-input" inputmode="numeric" maxlength="4" placeholder="____" />
             <div class="modal-actions">
                 <button id="passcode-cancel">Cancel</button>
                 <button id="passcode-submit">Submit</button>
