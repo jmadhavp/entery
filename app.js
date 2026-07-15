@@ -21,7 +21,8 @@ const COLLECTIONS = {
     expenses: 'expenses',
     users: 'users',
     settings: 'settings',
-    deleted: 'deleted_items'
+    deleted: 'deleted_items',
+    challans: 'challans'
 };
 
 const NAV_ITEMS = [
@@ -343,7 +344,7 @@ async function renderSales(container) {
     
     container.innerHTML = `
         <div class="card">
-            <h2>Add Sale</h2>
+            <h2>Add Sale / Delivery Challan</h2>
             <form id="sale-form">
                 <div class="form-group">
                     <label>Customer</label>
@@ -359,11 +360,28 @@ async function renderSales(container) {
                         <button type="button" class="secondary" onclick="addSaleItem()">Add Item</button>
                     </div>
                 </div>
+                <div class="form-group" style="margin-top:1rem;">
+                    <label>Payment Mode</label>
+                    <select id="sale-payment">
+                        <option>Cash</option>
+                        <option>Online</option>
+                        <option>Credit</option>
+                        <option>Cheque</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Remarks</label>
+                    <textarea id="sale-remarks"></textarea>
+                </div>
                 <div class="form-group">
                     <label>Total Amount</label>
                     <input type="text" id="sale-total" readonly value="₹0.00" style="background: var(--bg-alt);">
                 </div>
-                <button type="submit">Add Sale</button>
+                <div class="actions">
+                    <button type="button" onclick="submitSaleChallan('print')">Print</button>
+                    <button type="button" onclick="submitSaleChallan('saveprint')">Save & Print</button>
+                    <button type="button" class="secondary" onclick="submitSaleChallan('save')">Only Save</button>
+                </div>
             </form>
         </div>
         <div class="card">
@@ -392,16 +410,17 @@ async function renderSales(container) {
     window.inventoryData = inventory;
     window.customersData = customers;
     window.selectedCustomerId = null;
-    
+    window._challanInventory = inventory;
+    window._challanCustomers = customers;
+
     const customerSelect = document.getElementById('sale-customer');
     customerSelect.addEventListener('change', (e) => {
         window.selectedCustomerId = e.target.value;
-        // Refresh all existing items when customer changes
         const items = document.querySelectorAll('.sale-item');
         items.forEach(item => {
             const productSelect = item.querySelector('.sale-item-product');
             const currentValue = productSelect.value;
-            const itemId = item.id.replace('sale-item-', '');
+            const itemId = item.dataset.itemId;
             updateProductOptions(productSelect, itemId);
             if (currentValue) {
                 productSelect.value = currentValue;
@@ -409,18 +428,24 @@ async function renderSales(container) {
             }
         });
     });
-    
-    document.getElementById('sale-form').addEventListener('submit', handleSaleSubmit);
+
+    document.getElementById('sale-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitSaleChallan('saveprint');
+    });
     document.getElementById('sales-search').addEventListener('input', (e) => renderSalesList(sales, e.target.value));
+    // Start with one empty item row so the Batch Code / Scan QR option is visible immediately
+    addSaleItem();
     renderSalesList(sales);
 }
 
 function addSaleItem() {
     const itemsList = document.getElementById('sale-items-list');
-    const itemId = Date.now();
+    const itemId = Date.now() + Math.floor(Math.random() * 1000);
     const itemDiv = document.createElement('div');
     itemDiv.className = 'sale-item';
-    itemDiv.id = `sale-item-${itemId}`;
+    itemDiv.id = `ch-item-${itemId}`;
+    itemDiv.dataset.itemId = itemId;
     itemDiv.style.cssText = 'border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;';
     
     itemDiv.innerHTML = `
@@ -437,6 +462,13 @@ function addSaleItem() {
         <div class="form-group">
             <label>Unit Price</label>
             <input type="number" inputmode="decimal" class="sale-item-price" step="0.01" value="0" onchange="updateSaleTotal()">
+        </div>
+        <div class="form-group">
+            <label>Batch Code / Number</label>
+            <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+                <input type="text" class="ch-batch" placeholder="Manual or scan QR" style="flex:1;">
+                <button type="button" class="secondary btn-sm" style="min-height:44px;" onclick="startBatchScan('${itemId}')">Scan QR</button>
+            </div>
         </div>
         <button type="button" class="btn-danger btn-sm" onclick="removeSaleItem(${itemId})">Remove Item</button>
     `;
@@ -472,14 +504,14 @@ function updateProductOptions(productSelect, itemId) {
             const customerLink = (product.linkedCustomers || []).find(lc => lc.customerId === customerId);
             const customer = customers.find(c => c.id === customerId);
             const price = customerLink ? customerLink.price : product.sellingPrice;
-            optionsHtml += `<option value="${product.id}" data-price="${price}">${product.name} (${customer ? customer.name : 'Linked'}) - ₹${price.toFixed(2)}</option>`;
+            optionsHtml += `<option value="${product.id}" data-price="${price}" data-name="${escapeHtml(product.name)}">${product.name} (${customer ? customer.name : 'Linked'}) - ₹${price.toFixed(2)}</option>`;
         });
         optionsHtml += '</optgroup>';
     }
     
     optionsHtml += '<optgroup label="All Products">';
     otherProducts.forEach(product => {
-        optionsHtml += `<option value="${product.id}" data-price="${product.sellingPrice}">${product.name} - ₹${product.sellingPrice.toFixed(2)}</option>`;
+        optionsHtml += `<option value="${product.id}" data-price="${product.sellingPrice}" data-name="${escapeHtml(product.name)}">${product.name} - ₹${product.sellingPrice.toFixed(2)}</option>`;
     });
     optionsHtml += '</optgroup>';
     
@@ -487,7 +519,7 @@ function updateProductOptions(productSelect, itemId) {
 }
 
 function updateSaleItemPrice(itemId) {
-    const itemDiv = document.getElementById(`sale-item-${itemId}`);
+    const itemDiv = document.getElementById(`ch-item-${itemId}`);
     const productSelect = itemDiv.querySelector('.sale-item-product');
     const priceInput = itemDiv.querySelector('.sale-item-price');
     const selectedOption = productSelect.options[productSelect.selectedIndex];
@@ -498,7 +530,7 @@ function updateSaleItemPrice(itemId) {
 }
 
 function removeSaleItem(itemId) {
-    document.getElementById(`sale-item-${itemId}`).remove();
+    document.getElementById(`ch-item-${itemId}`).remove();
     updateSaleTotal();
 }
 
@@ -513,57 +545,140 @@ function updateSaleTotal() {
     document.getElementById('sale-total').value = `₹${total.toFixed(2)}`;
 }
 
-async function handleSaleSubmit(e) {
-    e.preventDefault();
-    if (!(await checkPasscodeRequired())) {
-        return;
-    }
+function collectSaleChallanData() {
     const customerId = document.getElementById('sale-customer').value;
-    const items = document.querySelectorAll('.sale-item');
-    
-    if (items.length === 0) {
-        showToast('Please add at least one item', 'error');
-        return;
+    if (!customerId) {
+        showToast('Please select a customer', 'error');
+        return null;
     }
-    
-    let totalAmount = 0;
-    const saleItemsData = [];
-    
-    for (const item of items) {
-        const productId = item.querySelector('.sale-item-product').value;
-        const qty = parseInt(item.querySelector('.sale-item-qty').value);
-        const price = parseFloat(item.querySelector('.sale-item-price').value);
-        
-        if (!productId || qty <= 0 || price <= 0) {
+    const customer = (window._challanCustomers || []).find(c => c.id === customerId);
+    const items = [];
+    let valid = true;
+    document.querySelectorAll('.sale-item').forEach(div => {
+        const sel = div.querySelector('.sale-item-product');
+        const pid = sel.value;
+        if (!pid) return;
+        const name = sel.options[sel.selectedIndex].dataset.name;
+        const qty = parseInt(div.querySelector('.sale-item-qty').value) || 0;
+        const price = parseFloat(div.querySelector('.sale-item-price').value) || 0;
+        const batch = div.querySelector('.ch-batch').value;
+        if (!pid || qty <= 0 || price <= 0) {
             showToast('Please fill in all item details correctly', 'error');
+            valid = false;
             return;
         }
-        
-        totalAmount += qty * price;
-        saleItemsData.push({ productId, quantity: qty, unitPrice: price });
-    }
-    
-    // Add sale as a single grouped transaction document (one entry per customer/transaction)
-    const sale = {
+        items.push({ productId: pid, productName: name, quantity: qty, unitPrice: price, rate: price, amount: qty * price, batch });
+    });
+    if (!valid || !items.length) return null;
+    const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+    const totalAmt = items.reduce((s, i) => s + i.amount, 0);
+    return {
         customerId,
+        partyName: customer ? customer.name : '',
+        partyAddress: customer ? customer.address : '',
+        partyMobile: customer ? customer.phone : '',
+        items,
+        totalQuantity: totalQty,
+        totalAmount: totalAmt,
+        paymentMode: document.getElementById('sale-payment').value,
+        remarks: document.getElementById('sale-remarks').value
+    };
+}
+
+async function submitSaleChallan(mode) {
+    if (!(await checkPasscodeRequired())) return;
+    const data = collectSaleChallanData();
+    if (!data) return;
+
+    if (mode === 'print') {
+        // Print a preview without saving
+        const preview = { ...data, challanNo: 'PREVIEW', date: new Date().toISOString() };
+        await printChallanData(preview);
+        return;
+    }
+
+    // 1) Save the Sale (with inventory deduction, as before)
+    const saleItemsData = data.items.map(it => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice
+    }));
+    const sale = {
+        customerId: data.customerId,
         items: saleItemsData,
-        total: totalAmount,
+        total: data.totalAmount,
         date: new Date().toISOString(),
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-
-    // Save grouped sale
-    await addDocument('sales', sale);
+    const saleRef = await db.collection('sales').add(sale);
 
     // Update inventory quantities per item
-    for (const itemData of saleItemsData) {
-        const product = await getDocument('inventory', itemData.productId);
+    for (const it of saleItemsData) {
+        const product = await getDocument('inventory', it.productId);
         if (product) {
-            await updateDocument('inventory', itemData.productId, { quantity: (product.quantity || 0) - itemData.quantity });
+            await updateDocument('inventory', it.productId, { quantity: (product.quantity || 0) - it.quantity });
         }
     }
-    
+
+    // 2) Save the linked Challan (sales = challan, challan = sales)
+    const challan = await createChallan({
+        customerId: data.customerId,
+        partyName: data.partyName,
+        partyAddress: data.partyAddress,
+        partyMobile: data.partyMobile,
+        items: data.items,
+        totalQuantity: data.totalQuantity,
+        totalAmount: data.totalAmount,
+        paymentMode: data.paymentMode,
+        remarks: data.remarks,
+        saleId: saleRef.id
+    });
+
+    // Link challan id back to the sale for easy re-print
+    await updateDocument('sales', saleRef.id, { challanId: challan.id });
+
+    if (mode === 'saveprint') {
+        await printChallanData(challan);
+    }
+    showToast(mode === 'saveprint' ? 'Saved & sent to print' : 'Saved', 'success');
     renderSales(document.getElementById('content'));
+}
+
+async function printSaleChallan(saleId) {
+    const sale = await getDocument('sales', saleId);
+    if (!sale) return;
+    let challan = null;
+    if (sale.challanId) {
+        challan = await getDocument('challans', sale.challanId);
+    }
+    if (!challan) {
+        // Build a challan on the fly for older entries (no stored challan)
+        const customers = await getCollection('customers');
+        const customer = customers.find(c => c.id === sale.customerId);
+        const inventory = await getCollection('inventory');
+        const invMap = Object.fromEntries(inventory.map(i => [i.id, i]));
+        const items = (sale.items || []).map(it => ({
+            productId: it.productId,
+            productName: invMap[it.productId] ? invMap[it.productId].name : 'Unknown',
+            quantity: it.quantity,
+            rate: it.unitPrice || 0,
+            amount: (it.quantity || 0) * (it.unitPrice || 0),
+            batch: it.batch || ''
+        }));
+        challan = {
+            challanNo: sale.challanNo || 'PREVIEW',
+            date: sale.date || new Date().toISOString(),
+            partyName: customer ? customer.name : '',
+            partyAddress: customer ? customer.address : '',
+            partyMobile: customer ? customer.phone : '',
+            items,
+            totalQuantity: items.reduce((s, i) => s + i.quantity, 0),
+            totalAmount: sale.total || 0,
+            paymentMode: sale.paymentMode || '',
+            remarks: sale.remarks || ''
+        };
+    }
+    await printChallanData(challan);
 }
 
 async function renderSalesList(sales, search = '') {
@@ -594,6 +709,7 @@ async function renderSalesList(sales, search = '') {
                         <td>${customerMap[s.customerId] || 'Unknown'}</td>
                         <td>₹${(s.total || 0).toFixed(2)}</td>
                         <td class="actions">
+                            <button class="btn-sm secondary" onclick="event.stopPropagation(); printSaleChallan('${s.id}')">Challan</button>
                             <button class="btn-sm secondary" onclick="event.stopPropagation(); generateQR('sale', '${s.id}')">QR</button>
                             <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteItem('sales', '${s.id}')">Delete</button>
                         </td>
@@ -2053,7 +2169,8 @@ function updateEditTotal(type) {
     document.getElementById('edit-total').value = `₹${total.toFixed(2)}`;
 }
 
-function renderSettings(container) {
+async function renderSettings(container) {
+    const company = await getCompanySettings();
     container.innerHTML = `
         <div class="card">
             <h2>Settings</h2>
@@ -2078,7 +2195,43 @@ function renderSettings(container) {
             </div>
             <!-- PASSCODE SECTION END -->
         </div>
+        <div class="card">
+            <h2>Company Details (for Challan)</h2>
+            <form id="company-form">
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input type="text" id="company-name" value="${escapeHtml(company.name)}">
+                </div>
+                <div class="form-group">
+                    <label>Brand Name</label>
+                    <input type="text" id="company-brand" value="${escapeHtml(company.brand)}">
+                </div>
+                <div class="form-group">
+                    <label>Factory Address</label>
+                    <textarea id="company-address">${escapeHtml(company.address)}</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Mobile Number</label>
+                    <input type="text" id="company-mobile" value="${escapeHtml(company.mobile)}">
+                </div>
+                <div class="form-group">
+                    <label>FSSAI Licence No.</label>
+                    <input type="text" id="company-fssai" value="${escapeHtml(company.fssai)}">
+                </div>
+                <div class="form-group">
+                    <label>Company Logo</label>
+                    <input type="file" id="company-logo" accept="image/*">
+                    ${company.logo ? `<img src="${company.logo}" style="max-height:50px; display:block; margin-top:0.5rem;">` : ''}
+                    <input type="hidden" id="company-logo-data" value="${escapeHtml(company.logo)}">
+                </div>
+                <button type="submit">Save Company Details</button>
+            </form>
+        </div>
     `;
+    document.getElementById('company-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveCompanySettings();
+    });
     // Initialize passcode settings after rendering
     initPasscodeSettings();
 }
@@ -2698,4 +2851,320 @@ function showToast(message, type = 'info') {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+// ============ WHOLESALE DELIVERY CHALLAN (NON-GST) ============
+
+function escapeHtml(str) {
+    if (str == null) return '';
+    const map = {
+        '&': '&' + 'amp;',
+        '<': '&' + 'lt;',
+        '>': '&' + 'gt;',
+        '"': '&' + 'quot;',
+        "'": '&' + '#39;'
+    };
+    return String(str).replace(/[&<>"']/g, m => map[m]);
+}
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+const DEFAULT_COMPANY = {
+    name: 'RAJ BOTTLING',
+    brand: 'KLASSIC',
+    address: '104, 1st floor, plot no-26, block no 214, vikas arcade, village masma, taluka olpad',
+    mobile: '7990829993',
+    fssai: '10726022000066',
+    email: 'rajlace_mj@yahoo.com',
+    logo: ''
+};
+
+async function getCompanySettings() {
+    try {
+        const doc = await db.collection('settings').doc('company').get();
+        if (doc.exists) {
+            return { ...DEFAULT_COMPANY, ...doc.data() };
+        }
+        return { ...DEFAULT_COMPANY };
+    } catch (err) {
+        console.error('Error getting company settings:', err);
+        return { ...DEFAULT_COMPANY };
+    }
+}
+
+async function saveCompanySettings() {
+    if (!(await checkPasscodeRequired())) return;
+    const logoInput = document.getElementById('company-logo');
+    let logo = (document.getElementById('company-logo-data') || {}).value || '';
+    if (logoInput && logoInput.files && logoInput.files[0]) {
+        try {
+            logo = await readFileAsDataURL(logoInput.files[0]);
+        } catch (err) {
+            showToast('Error reading logo', 'error');
+        }
+    }
+    const data = {
+        name: document.getElementById('company-name').value,
+        brand: document.getElementById('company-brand').value,
+        address: document.getElementById('company-address').value,
+        mobile: document.getElementById('company-mobile').value,
+        fssai: document.getElementById('company-fssai').value,
+        logo
+    };
+    try {
+        await db.collection('settings').doc('company').set(data, { merge: true });
+        showToast('Company details saved', 'success');
+    } catch (err) {
+        showToast('Error saving company details: ' + err.message, 'error');
+    }
+}
+
+async function getNextChallanNo() {
+    // Challan number is based on the date: the day-of-month is the base,
+    // and multiple entries on the same day get .1, .2, .3 ... suffixes.
+    // e.g. 21/7/2026 -> "21" (first), then "21.1", "21.2" for more that day.
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const dayStr = `${y}-${m}-${d}`;
+    const dayNum = now.getDate();
+
+    const metaRef = db.collection('settings').doc('challan_meta');
+    const snap = await metaRef.get();
+    let seq = 1;
+    if (snap.exists && snap.data().lastDate === dayStr && snap.data().lastSeq) {
+        seq = parseInt(snap.data().lastSeq, 10) + 1;
+    }
+    await metaRef.set({ lastDate: dayStr, lastSeq: seq }, { merge: true });
+
+    return seq === 1 ? String(dayNum) : `${dayNum}.${seq - 1}`;
+}
+
+async function createChallan(data) {
+    const challanNo = await getNextChallanNo();
+    const challan = {
+        challanNo,
+        date: new Date().toISOString(),
+        ...data,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    const ref = await db.collection('challans').add(challan);
+    return { id: ref.id, ...challan };
+}
+
+
+async function printChallanData(challan) {
+    const company = await getCompanySettings();
+    const html = buildChallanPrintHTML(challan, company);
+    const w = window.open('', '_blank');
+    if (!w) {
+        showToast('Popup blocked. Please allow popups to print.', 'error');
+        return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 250);
+}
+
+async function printChallan(challanId) {
+    const challan = await getDocument('challans', challanId);
+    if (!challan) {
+        showToast('Challan not found', 'error');
+        return;
+    }
+    await printChallanData(challan);
+}
+
+let _qrScanner = null;
+let _qrTargetItemId = null;
+
+async function startBatchScan(itemId) {
+    _qrTargetItemId = itemId;
+    let modal = document.getElementById('qr-scan-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'qr-scan-modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width:420px;">
+                <h3>Scan Batch QR Code</h3>
+                <div id="qr-reader" style="width:100%;"></div>
+                <div id="qr-scan-error" class="error"></div>
+                <div class="modal-actions">
+                    <button type="button" class="secondary" onclick="stopBatchScan()">Cancel</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+    modal.classList.remove('hidden');
+    try {
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('QR library not loaded (needs internet)');
+        }
+        if (!_qrScanner) {
+            _qrScanner = new Html5Qrcode('qr-reader');
+        }
+        await _qrScanner.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: 200 },
+            (decodedText) => {
+                const div = document.getElementById('ch-item-' + _qrTargetItemId);
+                if (div) div.querySelector('.ch-batch').value = decodedText;
+                stopBatchScan();
+                showToast('Batch code scanned', 'success');
+            },
+            () => {}
+        );
+    } catch (err) {
+        const e = document.getElementById('qr-scan-error');
+        if (e) e.textContent = 'Camera error: ' + err;
+    }
+}
+
+function stopBatchScan() {
+    const modal = document.getElementById('qr-scan-modal');
+    if (modal) modal.classList.add('hidden');
+    if (_qrScanner && _qrScanner.isScanning) {
+        _qrScanner.stop().catch(() => {});
+    }
+}
+
+function challanCopyHTML(challan, company, copyTitle) {
+    const itemsRows = (challan.items || []).map((it, i) => `
+        <tr>
+            <td style="text-align:center;">${i + 1}</td>
+            <td>${escapeHtml(it.productName)}</td>
+            <td>${escapeHtml(it.batch || '-')}</td>
+            <td style="text-align:right;">${it.quantity}</td>
+            <td style="text-align:right;">₹${Number(it.rate || 0).toFixed(2)}</td>
+            <td style="text-align:right;">₹${Number(it.amount || 0).toFixed(2)}</td>
+        </tr>
+    `).join('');
+
+    const logo = company.logo
+        ? `<img src="${company.logo}" style="max-height:38px; max-width:130px; display:block;">`
+        : '';
+
+    return `
+    <div class="copy">
+        <div class="ch-head">
+            <div class="ch-company">
+                ${logo}
+                <div>
+                    <div class="ch-name">${escapeHtml(company.name || 'COMPANY NAME')}</div>
+                    <div class="ch-sub">${escapeHtml(company.brand ? company.brand + ' - ' : '')}Cold Drink Manufacturer</div>
+                    <div class="ch-addr">${escapeHtml(company.address || '')}</div>
+                    <div class="ch-addr">Mobile: ${escapeHtml(company.mobile || '')} &nbsp;|&nbsp; FSSAI: ${escapeHtml(company.fssai || '')}</div>
+                </div>
+            </div>
+            <div class="ch-meta">
+                <div class="ch-title">DELIVERY CHALLAN</div>
+                <div><strong>Challan No:</strong> ${challan.challanNo}</div>
+                <div><strong>Date:</strong> ${new Date(challan.date).toLocaleDateString()}</div>
+                <div class="ch-copy">${copyTitle}</div>
+            </div>
+        </div>
+        <div class="ch-party">
+            <strong>Party:</strong> ${escapeHtml(challan.partyName || '')} &nbsp;&nbsp;
+            <strong>Mobile:</strong> ${escapeHtml(challan.partyMobile || '')}<br>
+            <strong>Address:</strong> ${escapeHtml(challan.partyAddress || '')}
+        </div>
+        <table class="ch-table">
+            <thead>
+                <tr>
+                    <th style="width:6%;">Sr.</th>
+                    <th>Product Name</th>
+                    <th style="width:16%;">Batch</th>
+                    <th style="width:13%;">Qty (Cases)</th>
+                    <th style="width:15%;">Rate</th>
+                    <th style="width:16%;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>${itemsRows}</tbody>
+        </table>
+        <div class="ch-bottom">
+            <div class="ch-totals">
+                <div><strong>Total Quantity:</strong> ${challan.totalQuantity}</div>
+                <div><strong>Total Amount:</strong> ₹${Number(challan.totalAmount || 0).toFixed(2)}</div>
+                <div><strong>Payment Mode:</strong> ${escapeHtml(challan.paymentMode || '')}</div>
+                <div><strong>Remarks:</strong> ${escapeHtml(challan.remarks || '')}</div>
+            </div>
+            <div class="ch-sign">
+                <div>Receiver's Signature</div>
+                <div>Authorized Signature</div>
+            </div>
+        </div>
+        <div class="ch-terms">
+            <strong>Terms & Conditions / શરતો અને પરિસ્થિતિ / नियम और शर्तें:</strong><br>
+            <strong>EN:</strong> Goods once sold will not be taken back. Any damaged or defective bottles/pieces will be accepted for replacement only within 14 days from the date of sale, provided that: the bottle seal is completely intact and unopened, the product has not been used or consumed, the original challan/invoice is produced at the time of return.<br>
+            <strong>GU:</strong> વેચાયેલ માલ પાછો લેવામાં નહીં આવે. કોઈપણ નુકસાન પામેલ અથવા ખામીવાળી બોટલ/ટુકડા માત્ર વેચાણ તારીખથી 14 દિવસની અંદર બદલી માટે સ્વીકારવામાં આવશે, જો કે: બોટલની સીલ સંપૂર્ણપણે સાચવેલી અને અનખૂલી હોય, ઉત્પાદનનો ઉપયોગ અથવા વપરાશ ન થયો હોય, અને બદલી સમયે મૂળ ચલણ/બીલ રજૂ કરવામાં આવે.<br>
+            <strong>HI:</strong> एक बार बेचा गया माल वापस नहीं लिया जाएगा। कोई भी क्षतिग्रस्त या दोषपूर्ण बोतल/टुकड़े केवल बिक्री की तारीख से 14 दिनों के भीतर बदले के लिए स्वीकार किए जाएंगे, बशर्ते कि: बोतल की सील पूरी तरह से बरकरार और अनखुली हो, उत्पाद का उपयोग या सेवन नहीं किया गया हो, और बदले के समय मूल चालान/बीजक प्रस्तुत किया गया हो.
+        </div>
+    </div>`;
+}
+
+function buildChallanPrintHTML(challan, company) {
+    const copy1 = challanCopyHTML(challan, company, 'ORIGINAL');
+    const copy2 = challanCopyHTML(challan, company, 'CUSTOMER COPY');
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Challan ${challan.challanNo}</title>
+<style>
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    @page { size: A4 portrait; margin: 6mm; }
+    body {
+        font-family: Arial, 'Segoe UI', Tahoma, sans-serif;
+        color: #000;
+        font-size: 10.5px;
+        line-height: 1.25;
+    }
+    .sheet { height: 100%; display: flex; flex-direction: column; gap: 2mm; }
+    .copy {
+        flex: 1 1 0;
+        min-height: 0;
+        border: 1px solid #000;
+        padding: 3mm 4mm;
+        display: flex;
+        flex-direction: column;
+    }
+    .ch-head { display: flex; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 2mm; }
+    .ch-company { display: flex; gap: 2mm; align-items: flex-start; }
+    .ch-name { font-size: 14px; font-weight: 700; }
+    .ch-sub { font-size: 10px; margin-bottom: 1mm; }
+    .ch-addr { font-size: 9px; }
+    .ch-meta { text-align: right; font-size: 10px; }
+    .ch-title { font-weight: 700; font-size: 12px; margin-bottom: 1mm; }
+    .ch-copy { margin-top: 1mm; font-weight: 700; }
+    .ch-party { font-size: 10px; padding: 1.5mm 0; border-bottom: 1px solid #000; }
+    .ch-table { width: 100%; border-collapse: collapse; font-size: 10px; flex: 1 1 auto; min-height: 0; }
+    .ch-table th, .ch-table td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; }
+    .ch-table th { background: #eee; }
+    .ch-bottom { display: flex; justify-content: space-between; font-size: 10px; padding-top: 1.5mm; border-top: 1px solid #000; gap: 4mm; }
+    .ch-totals { flex: 1; }
+    .ch-totals div { margin-bottom: 0.5mm; }
+    .ch-sign { display: flex; gap: 6mm; }
+    .ch-sign div { border-top: 1px solid #000; padding-top: 6mm; min-width: 38mm; text-align: center; font-size: 9px; }
+    .ch-terms { font-size: 7px; line-height: 1.2; padding-top: 1mm; border-top: 1px solid #000; margin-top: 1mm; }
+</style>
+</head>
+<body>
+    <div class="sheet">
+        ${copy1}
+        ${copy2}
+    </div>
+</body>
+</html>`;
 }
