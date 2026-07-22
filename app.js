@@ -355,6 +355,16 @@ async function renderSales(container) {
                 </div>
                 <div id="sale-items-container">
                     <h3>Items</h3>
+                    <div class="form-group">
+                        <label>Batch Code / Number (Global)</label>
+                        <input type="text" id="global-batch" placeholder="Enter batch code for all items" oninput="applyGlobalBatch()">
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="same-batch-toggle" checked onchange="toggleSameBatch()">
+                            <span>Same batch number for all items</span>
+                        </label>
+                    </div>
                     <div id="sale-items-list"></div>
                     <div class="form-group">
                         <button type="button" class="secondary" onclick="addSaleItem()">Add Item</button>
@@ -476,6 +486,19 @@ function addSaleItem() {
     itemsList.appendChild(itemDiv);
     const productSelect = itemDiv.querySelector('.sale-item-product');
     updateProductOptions(productSelect, itemId);
+
+    // If same-batch toggle is ON, inherit batch from first existing item
+    const toggle = document.getElementById('same-batch-toggle');
+    if (toggle && toggle.checked) {
+        const firstBatch = document.querySelector('.sale-item .ch-batch');
+        if (firstBatch && firstBatch.value) {
+            itemDiv.querySelector('.ch-batch').value = firstBatch.value;
+        }
+    }
+
+    // Attach batch input listener for same-batch sync
+    const batchInput = itemDiv.querySelector('.ch-batch');
+    batchInput.addEventListener('input', () => syncSameBatch(itemId));
 }
 
 function updateProductOptions(productSelect, itemId) {
@@ -543,6 +566,32 @@ function updateSaleTotal() {
         total += qty * price;
     });
     document.getElementById('sale-total').value = `₹${total.toFixed(2)}`;
+}
+
+function toggleSameBatch() {
+    // UI state only; actual sync happens via event listeners
+}
+
+function applyGlobalBatch() {
+    const toggle = document.getElementById('same-batch-toggle');
+    if (!toggle || !toggle.checked) return;
+    const globalVal = document.getElementById('global-batch').value;
+    document.querySelectorAll('.sale-item .ch-batch').forEach(input => {
+        input.value = globalVal;
+    });
+}
+
+function syncSameBatch(sourceItemId) {
+    const toggle = document.getElementById('same-batch-toggle');
+    if (!toggle || !toggle.checked) return;
+    const sourceDiv = document.getElementById('ch-item-' + sourceItemId);
+    if (!sourceDiv) return;
+    const batchVal = sourceDiv.querySelector('.ch-batch').value;
+    document.querySelectorAll('.sale-item').forEach(div => {
+        if (div !== sourceDiv) {
+            div.querySelector('.ch-batch').value = batchVal;
+        }
+    });
 }
 
 function collectSaleChallanData() {
@@ -709,6 +758,7 @@ async function renderSalesList(sales, search = '') {
                         <td>${customerMap[s.customerId] || 'Unknown'}</td>
                         <td>₹${(s.total || 0).toFixed(2)}</td>
                         <td class="actions">
+                            <button class="btn-sm secondary" onclick="event.stopPropagation(); editGroupedTransaction('${s.id}', 'sale')">Edit</button>
                             <button class="btn-sm secondary" onclick="event.stopPropagation(); printSaleChallan('${s.id}')">Challan</button>
                             <button class="btn-sm secondary" onclick="event.stopPropagation(); generateQR('sale', '${s.id}')">QR</button>
                             <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteItem('sales', '${s.id}')">Delete</button>
@@ -999,6 +1049,7 @@ async function renderPurchasesList(purchases, search = '') {
                         <td>${supplierMap[p.supplierId] || 'Unknown'}</td>
                         <td>₹${(p.total || 0).toFixed(2)}</td>
                         <td class="actions">
+                            <button class="btn-sm secondary" onclick="event.stopPropagation(); editGroupedTransaction('${p.id}', 'purchase')">Edit</button>
                             <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteItem('purchases', '${p.id}')">Delete</button>
                         </td>
                     </tr>
@@ -2098,9 +2149,24 @@ async function editGroupedTransaction(transactionId, type) {
         }];
     }
     
+    // For sales, try to get batch info from the linked challan
+    let challanItems = [];
+    if (type === 'sale' && doc.challanId) {
+        try {
+            const challanDoc = await getDocument('challans', doc.challanId);
+            if (challanDoc && Array.isArray(challanDoc.items)) {
+                challanItems = challanDoc.items;
+            }
+        } catch (e) {
+            console.warn('Could not load challan for batch editing', e);
+        }
+    }
+
     const itemsList = document.getElementById('edit-items-list');
     itemsToEdit.forEach((item, idx) => {
         const product = inventory.find(p => p.id === item.productId);
+        const challanItem = challanItems.find(ci => ci.productId === item.productId);
+        const itemBatch = challanItem ? (challanItem.batch || '') : '';
         itemsList.innerHTML += `
             <div style="border: 1px solid var(--border); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
                 <div class="form-group">
@@ -2115,6 +2181,10 @@ async function editGroupedTransaction(transactionId, type) {
                     <label>Unit Price</label>
                     <input type="number" inputmode="decimal" class="edit-item-price" step="0.01" value="${(item.unitPrice || item.unitCost || 0).toFixed(2)}" onchange="updateEditTotal('${type}')">
                 </div>
+                ${type === 'sale' ? `<div class="form-group">
+                    <label>Batch</label>
+                    <input type="text" class="edit-item-batch" value="${itemBatch}" placeholder="Batch">
+                </div>` : ''}
             </div>
         `;
     });
@@ -2127,13 +2197,18 @@ async function editGroupedTransaction(transactionId, type) {
         const qtyInputs = document.querySelectorAll('.edit-item-qty');
         const priceInputs = document.querySelectorAll('.edit-item-price');
         
+        const batchInputs = document.querySelectorAll('.edit-item-batch');
         itemsToEdit.forEach((item, idx) => {
-            newItems.push({
+            const newItem = {
                 productId: item.productId,
                 quantity: parseInt(qtyInputs[idx].value),
                 unitPrice: parseFloat(priceInputs[idx].value) || item.unitPrice,
                 unitCost: parseFloat(priceInputs[idx].value) || item.unitCost
-            });
+            };
+            if (type === 'sale' && batchInputs[idx]) {
+                newItem.batch = batchInputs[idx].value;
+            }
+            newItems.push(newItem);
         });
         
         const newTotal = newItems.reduce((sum, item) => sum + (item.quantity * (item.unitPrice || item.unitCost || 0)), 0);
@@ -2150,6 +2225,23 @@ async function editGroupedTransaction(transactionId, type) {
         }
         
         await updateDocument(type === 'sale' ? 'sales' : 'purchases', transactionId, updates);
+
+        // Update batch info in linked challan for sales
+        if (type === 'sale' && doc.challanId) {
+            try {
+                const challanDoc = await getDocument('challans', doc.challanId);
+                if (challanDoc && Array.isArray(challanDoc.items)) {
+                    const updatedChallanItems = challanDoc.items.map(ci => {
+                        const edited = newItems.find(ni => ni.productId === ci.productId);
+                        return edited ? { ...ci, batch: edited.batch || ci.batch || '' } : ci;
+                    });
+                    await updateDocument('challans', doc.challanId, { items: updatedChallanItems });
+                }
+            } catch (e) {
+                console.warn('Could not update challan batch', e);
+            }
+        }
+        
         modal.remove();
         renderPage();
     });
