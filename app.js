@@ -3106,9 +3106,9 @@ function challanCopyHTML(challan, company, copyTitle) {
         </div>
         <div class="ch-terms">
             <strong>Terms & Conditions / શરતો અને પરિસ્થિતિ / नियम और शर्तें:</strong><br>
-            <strong>EN:</strong> Goods once sold will not be taken back. Any damaged or defective bottles/pieces will be accepted for replacement only within 14 days from the date of sale, provided that: the bottle seal is completely intact and unopened, the product has not been used or consumed, the original challan/invoice is produced at the time of return.<br>
-            <strong>GU:</strong> વેચાયેલ માલ પાછો લેવામાં નહીં આવે. કોઈપણ નુકસાન પામેલ અથવા ખામીવાળી બોટલ/ટુકડા માત્ર વેચાણ તારીખથી 14 દિવસની અંદર બદલી માટે સ્વીકારવામાં આવશે, જો કે: બોટલની સીલ સંપૂર્ણપણે સાચવેલી અને અનખૂલી હોય, ઉત્પાદનનો ઉપયોગ અથવા વપરાશ ન થયો હોય, અને બદલી સમયે મૂળ ચલણ/બીલ રજૂ કરવામાં આવે.<br>
-            <strong>HI:</strong> एक बार बेचा गया माल वापस नहीं लिया जाएगा। कोई भी क्षतिग्रस्त या दोषपूर्ण बोतल/टुकड़े केवल बिक्री की तारीख से 14 दिनों के भीतर बदले के लिए स्वीकार किए जाएंगे, बशर्ते कि: बोतल की सील पूरी तरह से बरकरार और अनखुली हो, उत्पाद का उपयोग या सेवन नहीं किया गया हो, और बदले के समय मूल चालान/बीजक प्रस्तुत किया गया हो.
+            <strong>GU:</strong> અમારા દ્વારા વેચાણ થયેલ માલ માં જો કોઈપણ પ્રકાર ની તકલીફ હોય તો આપે વેચાણ લીધેલ માલ ની તારીખ થી ૧૪ દિવસ માં જાણ કરવી. ત્યારબાદ રાજ બોટલિંગ વેચાણ થયેલ માલ ની કોઈપણ પ્રકાર ની ફરિયાદ નો સાંભળશે નહીં.<br>
+            <strong>EN:</strong> If there is any problem with the goods sold by us, you must inform us within 14 days from the date of purchase. After that, Raj Bottling will not entertain any complaint regarding the goods sold.<br>
+            <strong>HI:</strong> अगर हमारे बेचे गए सामान में कोई समस्या है, तो आपको खरीदारी की तारीख से 14 दिनों के भीतर हमें सूचित करना होगा। इसके बाद, राज बॉटलिंग बेचे गए सामान के संबंध में किसी भी शिकायत पर विचार नहीं करेगा।
         </div>
     </div>`;
 }
